@@ -76,7 +76,12 @@ class URAClient:
             timeout=60,
         )
         resp.raise_for_status()
-        payload = resp.json()
+        try:
+            payload = resp.json()
+        except UnicodeDecodeError:
+            # URA occasionally returns non-UTF-8 bytes in project names; replace them.
+            import json as _json
+            payload = _json.loads(resp.content.decode("utf-8", errors="replace"))
         status = payload.get("Status")
         if status != "Success":
             raise RuntimeError(f"URA data request failed (batch={batch}): {payload}")
