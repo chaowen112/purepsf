@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: purepsf-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-purepsf}
+      POSTGRES_USER: ${POSTGRES_USER:-purepsf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-purepsf} -d ${POSTGRES_DB:-purepsf}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: purepsf-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-purepsf}:${POSTGRES_PASSWORD:-change_me_locally}@postgres:5432/${POSTGRES_DB:-purepsf}?sslmode=disable
+      BACKEND_PORT: 8080
+      BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+volumes:
+  pgdata:

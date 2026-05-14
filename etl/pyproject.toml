@@ -1,0 +1,46 @@
+[project]
+name = "purepsf-etl"
+version = "0.1.0"
+description = "purePSF data pipeline (URA / HDB / OneMap → Postgres+PostGIS)"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "psycopg[binary]>=3.2",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "pyproj>=3.6",
+    "apscheduler>=3.10",
+    "tenacity>=9.0",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+purepsf-etl = "etl.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]

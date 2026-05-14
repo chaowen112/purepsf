@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "queries"
+    schema: "../infra/schema.sql"
+    gen:
+      go:
+        package: "query"
+        out: "internal/query"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_pointers_for_null_types: true
+        emit_prepared_queries: false
+        emit_interface: false

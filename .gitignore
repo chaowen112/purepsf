@@ -1,0 +1,42 @@
+# Env
+.env
+.env.local
+*.env
+
+# Go
+backend/server
+backend/dist/
+*.test
+*.out
+vendor/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Vite
+node_modules/
+frontend/dist/
+.vite/
+*.log
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Data (raw URA downloads etc — too large + may have licence attribution requirements per file)
+data/ura_developer_sales/*.xlsx
+data/ura_developer_sales/*.xls
+data/ura_developer_sales/*.pdf
+!data/ura_developer_sales/.gitkeep
+
+# DB volumes (when running native postgres)
+infra/pgdata/
