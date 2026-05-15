@@ -2,9 +2,13 @@ import { useCallback, useState } from 'react'
 import MapView, { type LayerMode } from './components/MapView'
 import ProjectPanel from './components/ProjectPanel'
 import SubzonePanel from './components/SubzonePanel'
+import AgentsView from './components/AgentsView'
 import { fetchProjects, type ProjectSummary } from './api'
 
+type View = 'map' | 'agents'
+
 export default function App() {
+  const [view, setView] = useState<View>('map')
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [selected, setSelected] = useState<ProjectSummary | null>(null)
   const [selectedSubzoneId, setSelectedSubzoneId] = useState<number | null>(null)
@@ -39,23 +43,29 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="border-b bg-white px-4 py-2.5 shadow-sm flex-shrink-0">
+      <header className="flex items-center justify-between border-b bg-white px-4 py-2.5 shadow-sm flex-shrink-0">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold text-slate-800">purePSF</h1>
-          <p className="text-xs text-slate-400">
-            Independent project · Data sourced from URA &amp; HDB under the{' '}
-            <a
-              className="underline"
-              href="https://www.ura.gov.sg/ms/eservices/Maps/acceptance-grant-licence"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Singapore Open Data Licence
-            </a>
-          </p>
+          <nav className="flex gap-1 text-sm">
+            <NavBtn label="Map"    active={view === 'map'}    onClick={() => setView('map')} />
+            <NavBtn label="Agents" active={view === 'agents'} onClick={() => setView('agents')} />
+          </nav>
         </div>
+        <p className="text-xs text-slate-400 truncate ml-3">
+          Independent project · Data sourced from URA, HDB &amp; CEA under the{' '}
+          <a
+            className="underline"
+            href="https://www.ura.gov.sg/ms/eservices/Maps/acceptance-grant-licence"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Singapore Open Data Licence
+          </a>
+        </p>
       </header>
       <main className="flex flex-1 overflow-hidden">
+        {view === 'agents' ? <AgentsView /> : (
+        <>
         <div className={`relative flex-1 transition-all ${selected || selectedSubzoneId ? 'mr-[360px]' : ''}`}>
           <MapView
             projects={projects}
@@ -76,8 +86,21 @@ export default function App() {
                 : null}
           </aside>
         )}
+        </>
+        )}
       </main>
     </div>
+  )
+}
+
+function NavBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded px-3 py-1 ${active ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+    >
+      {label}
+    </button>
   )
 }
 
