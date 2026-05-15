@@ -9,6 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/chaowenchen/purepsf/backend/internal/metrics"
 )
 
 type Server struct {
@@ -25,6 +27,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(20 * time.Second))
 	r.Use(corsMiddleware)
+	r.Use(metrics.Middleware)
 
 	r.Get("/healthz", s.handleHealth)
 	r.Route("/api", func(r chi.Router) {
