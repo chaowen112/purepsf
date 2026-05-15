@@ -24,11 +24,19 @@ def cmd_ura_transactions(batches: str) -> None:
 
 @main.command("hdb-resale")
 @click.option("--limit", default=None, type=int, help="Max rows (default: all)")
-def cmd_hdb_resale(limit: int | None) -> None:
-    """Pull HDB resale flat prices from data.gov.sg and upsert."""
-    from etl.hdb_resale import run
+@click.option("--resource", "resource_id", default=None,
+              help="data.gov.sg resource ID (omit for the live 2017+ feed)")
+def cmd_hdb_resale(limit: int | None, resource_id: str | None) -> None:
+    """Pull HDB resale flat prices from data.gov.sg and upsert.
 
-    run(limit=limit)
+    Defaults to the live 2017+ feed. To backfill pre-2017 data, pass the
+    archive resource IDs in order (oldest first), e.g.:
+
+        purepsf-etl hdb-resale --resource d_ebc5ab87086db484f88045b47411ebc5
+    """
+    from etl.hdb_resale import run, _DEFAULT_RESOURCE
+
+    run(limit=limit, resource_id=resource_id or _DEFAULT_RESOURCE)
 
 
 @main.command("developer-sales")
