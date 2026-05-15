@@ -1,0 +1,260 @@
+package api
+
+import (
+	"math"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+)
+
+type projectSummary struct {
+	ID               int64    `json:"id"`
+	Source           string   `json:"source"`
+	Name             string   `json:"name"`
+	Street           *string  `json:"street,omitempty"`
+	District         *string  `json:"district,omitempty"`
+	MarketSegment    *string  `json:"market_segment,omitempty"`
+	PropertyType     *string  `json:"property_type,omitempty"`
+	Lat              *float64 `json:"lat,omitempty"`
+	Lng              *float64 `json:"lng,omitempty"`
+	TransactionCount int64    `json:"transaction_count"`
+	AvgPSF           *float64 `json:"avg_psf,omitempty"`
+	LatestDate       *string  `json:"latest_transaction,omitempty"`
+}
+
+func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
+	bbox := r.URL.Query().Get("bbox")
+	if bbox == "" {
+		writeError(w, http.StatusBadRequest, "bbox required: lng1,lat1,lng2,lat2")
+		return
+	}
+	parts := strings.Split(bbox, ",")
+	if len(parts) != 4 {
+		writeError(w, http.StatusBadRequest, "bbox must have 4 comma-separated values")
+		return
+	}
+	coords := make([]float64, 4)
+	for i, p := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid bbox coordinate: "+p)
+			return
+		}
+		coords[i] = v
+	}
+	lng1, lat1, lng2, lat2 := coords[0], coords[1], coords[2], coords[3]
+
+	const q = `
+		SELECT p.id, p.source::text, p.name, p.street, p.district, p.market_segment,
+		       p.property_type, p.lat, p.lng,
+		       COUNT(t.id)                                    AS transaction_count,
+		       ROUND(AVG(t.psf)::numeric, 0)::float8          AS avg_psf,
+		       MAX(t.contract_date)::text                     AS latest_transaction
+		FROM projects p
+		LEFT JOIN transactions t ON t.project_id = p.id
+		WHERE p.geom IS NOT NULL
+		  AND p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+		GROUP BY p.id
+		ORDER BY transaction_count DESC
+		LIMIT 500`
+
+	rows, err := s.pool.Query(r.Context(), q, lng1, lat1, lng2, lat2)
+	if err != nil {
+		s.logger.Error("handleListProjects", "err", err)
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	result := make([]projectSummary, 0, 64)
+	for rows.Next() {
+		var p projectSummary
+		if err := rows.Scan(
+			&p.ID, &p.Source, &p.Name, &p.Street, &p.District,
+			&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
+			&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
+		); err != nil {
+			s.logger.Error("handleListProjects scan", "err", err)
+			writeError(w, http.StatusInternalServerError, "scan error")
+			return
+		}
+		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "rows error")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ---- /api/projects/{id}/transactions ----
+
+type transaction struct {
+	ID              int64    `json:"id"`
+	ContractDate    string   `json:"contract_date"`
+	AreaSqm         *float64 `json:"area_sqm,omitempty"`
+	Price           float64  `json:"price"`
+	PSF             *float64 `json:"psf,omitempty"`
+	FloorRange      *string  `json:"floor_range,omitempty"`
+	PropertyType    *string  `json:"property_type,omitempty"`
+	TypeOfSale      *string  `json:"type_of_sale,omitempty"`
+	FlatType        *string  `json:"flat_type,omitempty"`
+	NoOfUnits       *int32   `json:"no_of_units,omitempty"`
+}
+
+func (s *Server) handleProjectTransactions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	from := r.URL.Query().Get("from") // YYYY-MM-DD or empty
+	to := r.URL.Query().Get("to")
+
+	const q = `
+		SELECT id, contract_date::text, area_sqm::float8, price::float8, psf::float8,
+		       floor_range, property_type, type_of_sale, flat_type, no_of_units
+		FROM transactions
+		WHERE project_id = $1
+		  AND ($2::date IS NULL OR contract_date >= $2::date)
+		  AND ($3::date IS NULL OR contract_date <= $3::date)
+		ORDER BY contract_date DESC, id DESC`
+
+	fromParam := nullStr(from)
+	toParam := nullStr(to)
+
+	rows, err := s.pool.Query(r.Context(), q, id, fromParam, toParam)
+	if err != nil {
+		s.logger.Error("handleProjectTransactions", "err", err)
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	result := make([]transaction, 0, 64)
+	for rows.Next() {
+		var t transaction
+		if err := rows.Scan(
+			&t.ID, &t.ContractDate, &t.AreaSqm, &t.Price, &t.PSF,
+			&t.FloorRange, &t.PropertyType, &t.TypeOfSale, &t.FlatType, &t.NoOfUnits,
+		); err != nil {
+			s.logger.Error("handleProjectTransactions scan", "err", err)
+			writeError(w, http.StatusInternalServerError, "scan error")
+			return
+		}
+		result = append(result, t)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "rows error")
+		return
+	}
+	if len(result) == 0 {
+		// Distinguish "project not found" from "project has no transactions"
+		var exists bool
+		_ = s.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM projects WHERE id=$1)`, id).Scan(&exists)
+		if !exists {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ---- /api/projects/{id}/comparison ----
+
+type ownStats struct {
+	AvgPSF   *float64 `json:"avg_psf"`
+	Count    int64    `json:"count"`
+	DateFrom *string  `json:"date_from"`
+	DateTo   *string  `json:"date_to"`
+}
+
+type nearbyStats struct {
+	AvgPSF   *float64 `json:"avg_psf"`
+	Count    int64    `json:"count"`
+	RadiusM  int      `json:"radius_m"`
+}
+
+type comparisonResponse struct {
+	ProjectID   int64        `json:"project_id"`
+	Own         ownStats     `json:"own"`
+	Nearby500m  nearbyStats  `json:"nearby_500m"`
+	PremiumPct  *float64     `json:"premium_pct"`
+}
+
+func (s *Server) handleProjectComparison(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var exists bool
+	if err := s.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM projects WHERE id=$1)`, id).Scan(&exists); err != nil || !exists {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	// Own stats
+	var own ownStats
+	const ownQ = `
+		SELECT ROUND(AVG(psf)::numeric, 0)::float8,
+		       COUNT(*),
+		       MIN(contract_date)::text,
+		       MAX(contract_date)::text
+		FROM transactions
+		WHERE project_id = $1 AND psf IS NOT NULL`
+	if err := s.pool.QueryRow(r.Context(), ownQ, id).Scan(
+		&own.AvgPSF, &own.Count, &own.DateFrom, &own.DateTo,
+	); err != nil {
+		s.logger.Error("handleProjectComparison own", "err", err)
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+
+	// Nearby 500m stats (last 24 months)
+	var nearby nearbyStats
+	nearby.RadiusM = 500
+	const nearbyQ = `
+		SELECT ROUND(AVG(t.psf)::numeric, 0)::float8, COUNT(*)
+		FROM transactions t
+		JOIN projects p ON t.project_id = p.id
+		WHERE t.psf IS NOT NULL
+		  AND t.project_id != $1
+		  AND p.geom IS NOT NULL
+		  AND ST_DWithin(
+		        p.geom::geography,
+		        (SELECT geom::geography FROM projects WHERE id = $1),
+		        500
+		      )
+		  AND t.contract_date >= CURRENT_DATE - INTERVAL '24 months'`
+	if err := s.pool.QueryRow(r.Context(), nearbyQ, id).Scan(
+		&nearby.AvgPSF, &nearby.Count,
+	); err != nil {
+		s.logger.Error("handleProjectComparison nearby", "err", err)
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+
+	resp := comparisonResponse{
+		ProjectID:  id,
+		Own:        own,
+		Nearby500m: nearby,
+	}
+	if own.AvgPSF != nil && nearby.AvgPSF != nil && *nearby.AvgPSF > 0 {
+		pct := math.Round((*own.AvgPSF / *nearby.AvgPSF - 1) * 1000) / 10 // 1 d.p.
+		resp.PremiumPct = &pct
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// nullStr converts an empty string to nil for use as a nullable SQL parameter.
+func nullStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
