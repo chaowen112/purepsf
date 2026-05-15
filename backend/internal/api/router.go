@@ -42,6 +42,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 		r.Get("/healthz", s.handleHealth)
 		r.Route("/api", func(r chi.Router) {
 			r.Get("/projects", s.handleListProjects)
+			r.Get("/projects/{id}", s.handleGetProject)
 			r.Get("/projects/{id}/transactions", s.handleProjectTransactions)
 			r.Get("/projects/{id}/comparison", s.handleProjectComparison)
 			r.Get("/tracked", s.handleTracked)
@@ -52,6 +53,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 			r.Get("/subzones/{id}/agents", s.handleSubzoneAgents)
 			r.Get("/agents", s.handleAgentsList)
 			r.Get("/agents/towns", s.handleAgentsTowns)
+			r.Get("/search", s.handleSearch)
 		})
 	})
 	return r

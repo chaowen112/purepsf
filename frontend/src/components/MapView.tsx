@@ -12,6 +12,9 @@ type Props = {
   onSelectSubzone: (id: number) => void
   onBoundsChange: (bbox: [number, number, number, number]) => void
   layerMode: LayerMode
+  // Bumped each time a search hit is picked. The effect that watches this
+  // calls map.flyTo on the new coords; previous flyTargets are discarded.
+  flyTarget: { lng: number; lat: number; zoom?: number; nonce: number } | null
 }
 
 const PSF_COLORS: [number, string][] = [
@@ -30,7 +33,7 @@ const colorExpression = (): maplibregl.ExpressionSpecification => [
   ...PSF_COLORS.flat(),
 ] as maplibregl.ExpressionSpecification
 
-export default function MapView({ projects, selectedId, onSelect, onSelectSubzone, onBoundsChange, layerMode }: Props) {
+export default function MapView({ projects, selectedId, onSelect, onSelectSubzone, onBoundsChange, layerMode, flyTarget }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -222,6 +225,17 @@ export default function MapView({ projects, selectedId, onSelect, onSelectSubzon
       'case', ['==', ['get', 'id'], selectedId ?? -1], 3, 0,
     ])
   }, [selectedId])
+
+  // Fly to a search hit. Nonce-keyed so the same coord triggers a fresh fly.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !flyTarget) return
+    map.flyTo({
+      center: [flyTarget.lng, flyTarget.lat],
+      zoom: flyTarget.zoom ?? 16,
+      essential: true,
+    })
+  }, [flyTarget?.nonce])
 
   // Layer mode toggle: markers vs subzones (lazy-load subzone data on first show)
   useEffect(() => {

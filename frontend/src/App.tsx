@@ -3,9 +3,11 @@ import MapView, { type LayerMode } from './components/MapView'
 import ProjectPanel from './components/ProjectPanel'
 import SubzonePanel from './components/SubzonePanel'
 import AgentsView from './components/AgentsView'
-import { fetchProjects, type ProjectSummary } from './api'
+import SearchBox from './components/SearchBox'
+import { fetchProject, fetchProjects, type ProjectSummary, type SearchHit } from './api'
 
 type View = 'map' | 'agents'
+type FlyTarget = { lng: number; lat: number; zoom?: number; nonce: number }
 
 export default function App() {
   const [view, setView] = useState<View>('map')
@@ -13,6 +15,7 @@ export default function App() {
   const [selected, setSelected] = useState<ProjectSummary | null>(null)
   const [selectedSubzoneId, setSelectedSubzoneId] = useState<number | null>(null)
   const [layerMode, setLayerMode] = useState<LayerMode>('markers')
+  const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null)
 
   const handleBoundsChange = useCallback(async (bbox: [number, number, number, number]) => {
     try {
@@ -41,15 +44,37 @@ export default function App() {
     setSelectedSubzoneId(null)
   }, [])
 
+  const handleSearchPick = useCallback(async (hit: SearchHit) => {
+    setView('map')
+    if (hit.lat != null && hit.lng != null) {
+      setFlyTarget({
+        lng: hit.lng, lat: hit.lat,
+        zoom: hit.type === 'subzone' ? 14 : 16,
+        nonce: Date.now(),
+      })
+    }
+    if (hit.type === 'subzone') {
+      setSelected(null)
+      setSelectedSubzoneId(hit.id)
+    } else {
+      setSelectedSubzoneId(null)
+      try {
+        const p = await fetchProject(hit.id)
+        setSelected(p)
+      } catch (e) { console.error('fetchProject', e) }
+    }
+  }, [])
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b bg-white px-4 py-2.5 shadow-sm flex-shrink-0">
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-800">purePSF</h1>
           <nav className="flex gap-1 text-sm">
             <NavBtn label="Map"    active={view === 'map'}    onClick={() => setView('map')} />
             <NavBtn label="Agents" active={view === 'agents'} onClick={() => setView('agents')} />
           </nav>
+          <SearchBox onPick={handleSearchPick} />
         </div>
         <p className="text-xs text-slate-400 truncate ml-3">
           Independent project · Data sourced from URA, HDB &amp; CEA under the{' '}
@@ -74,6 +99,7 @@ export default function App() {
             onSelectSubzone={handleSelectSubzone}
             onBoundsChange={handleBoundsChange}
             layerMode={layerMode}
+            flyTarget={flyTarget}
           />
           <LayerToggle value={layerMode} onChange={setLayerMode} />
         </div>

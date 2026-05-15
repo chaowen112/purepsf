@@ -47,6 +47,10 @@ export function fetchProjects(bbox: [number, number, number, number]) {
   return get<ProjectSummary[]>(`/api/projects?bbox=${lng1},${lat1},${lng2},${lat2}`)
 }
 
+export function fetchProject(id: number) {
+  return get<ProjectSummary>(`/api/projects/${id}`)
+}
+
 export function fetchTransactions(projectId: number) {
   return get<Transaction[]>(`/api/projects/${projectId}/transactions`)
 }
@@ -176,6 +180,21 @@ export async function fetchAgents(opts: AgentFilter = {}): Promise<{ rows: Agent
 
 export function fetchAgentTowns() {
   return get<string[]>('/api/agents/towns')
+}
+
+export type SearchHit = {
+  type: 'project' | 'subzone'
+  id: number
+  label: string
+  secondary: string
+  lat?: number
+  lng?: number
+  source?: 'URA' | 'HDB'
+}
+
+export function fetchSearch(q: string, limit = 12) {
+  if (!q.trim()) return Promise.resolve<SearchHit[]>([])
+  return get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`)
 }
 
 export function fetchSubzoneAgents(id: number, opts: {

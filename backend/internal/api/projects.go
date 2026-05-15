@@ -90,6 +90,36 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// ---- /api/projects/{id} (single) ----
+
+func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	const q = `
+		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
+		       p.property_type, p.lat, p.lng,
+		       COUNT(t.id)                            AS transaction_count,
+		       ROUND(AVG(t.psf)::numeric, 0)::float8  AS avg_psf,
+		       MAX(t.contract_date)::text             AS latest_transaction
+		FROM projects p
+		LEFT JOIN transactions t ON t.project_id = p.id
+		WHERE p.id = $1
+		GROUP BY p.id`
+	var p projectSummary
+	if err := s.pool.QueryRow(r.Context(), q, id).Scan(
+		&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
+		&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
+		&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
+	); err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
 // ---- /api/projects/{id}/transactions ----
 
 type transaction struct {
