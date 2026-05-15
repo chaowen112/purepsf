@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CartesianGrid, ResponsiveContainer, Scatter, ScatterChart,
   Tooltip, XAxis, YAxis, ReferenceLine,
@@ -19,6 +19,12 @@ function dateToMs(d: string) {
 
 function fmtDate(ms: number) {
   return new Date(ms).toLocaleDateString('en-SG', { year: 'numeric', month: 'short' })
+}
+
+function fmtPrice(p: number) {
+  if (p >= 1_000_000) return `$${(p / 1_000_000).toFixed(p >= 10_000_000 ? 1 : 2)}M`
+  if (p >= 1_000) return `$${Math.round(p / 1_000)}K`
+  return `$${p}`
 }
 
 export default function ProjectPanel({ project, onClose }: Props) {
@@ -183,10 +189,13 @@ export default function ProjectPanel({ project, onClose }: Props) {
           </div>
         )}
 
-        {/* Transaction count footer */}
-        {txns && (
+        {/* Transaction list */}
+        {txns && txns.length > 0 && <TransactionList txns={txns} />}
+
+        {/* Date range footer */}
+        {txns && comp?.own.date_from && comp?.own.date_to && (
           <p className="text-xs text-slate-400">
-            {txns.length} transactions · {comp?.own.date_from?.slice(0, 7)} – {comp?.own.date_to?.slice(0, 7)}
+            range · {comp.own.date_from.slice(0, 7)} – {comp.own.date_to.slice(0, 7)}
           </p>
         )}
       </div>
@@ -202,6 +211,75 @@ function Stat({ label, value, sub, accent }: {
       <div className="text-xs text-slate-400 mb-0.5">{label}</div>
       <div className={`text-lg font-semibold ${accent ?? 'text-slate-800'}`}>{value}</div>
       {sub && <div className="text-xs text-slate-400">{sub}</div>}
+    </div>
+  )
+}
+
+const INITIAL_ROWS = 50
+
+function TransactionList({ txns }: { txns: Transaction[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const total = txns.length
+  const rows = useMemo(
+    () => (expanded ? txns : txns.slice(0, INITIAL_ROWS)),
+    [txns, expanded],
+  )
+  const hidden = total - rows.length
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+          Transactions
+        </h3>
+        <span className="text-xs text-slate-400">{total} total</span>
+      </div>
+      <div className="overflow-x-auto rounded border border-slate-100">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5 text-left font-medium">Date</th>
+              <th className="px-2 py-1.5 text-right font-medium">Area</th>
+              <th className="px-2 py-1.5 text-right font-medium">Price</th>
+              <th className="px-2 py-1.5 text-right font-medium">PSF</th>
+              <th className="px-2 py-1.5 text-left font-medium">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((t) => {
+              const detail = [t.flat_type, t.floor_range, t.type_of_sale]
+                .filter(Boolean).join(' · ')
+              return (
+                <tr key={t.id} className="border-t border-slate-100">
+                  <td className="px-2 py-1 text-slate-700 whitespace-nowrap">
+                    {t.contract_date.slice(0, 7)}
+                  </td>
+                  <td className="px-2 py-1 text-right text-slate-600 tabular-nums">
+                    {t.area_sqm != null ? `${Math.round(t.area_sqm)}m²` : '—'}
+                  </td>
+                  <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
+                    {fmtPrice(t.price)}
+                  </td>
+                  <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
+                    {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-2 py-1 text-slate-500 truncate max-w-[120px]" title={detail}>
+                    {detail || '—'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {hidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="mt-2 text-xs text-blue-600 hover:underline"
+        >
+          Show {hidden} more
+        </button>
+      )}
     </div>
   )
 }
