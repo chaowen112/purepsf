@@ -3,10 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>purePSF — Singapore transaction map</title>
+    <meta name="robots" content="index, follow" />
+    <title>purePSF — Singapore property transaction map (URA + HDB)</title>
+    <meta
+      name="description"
+      content="Explore real Singapore property transaction prices from URA private sales and HDB resale on an interactive map. PSF charts, subzone comparisons, lease info, and agent activity — sourced from data.gov.sg under the Singapore Open Data Licence."
+    />
+    <link rel="canonical" href="https://purepsf.tet.sg/" />
+    <meta property="og:site_name" content="purePSF" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="purePSF — Singapore property transaction map" />
+    <meta property="og:description" content="Real transaction prices, mapped. URA + HDB, 1990 to today." />
+    <meta property="og:url" content="https://purepsf.tet.sg/" />
+    <meta name="twitter:card" content="summary" />
   </head>
   <body class="bg-slate-50">
-    <div id="root"></div>
+    <div id="root">
+      <noscript>
+        <main style="max-width:680px;margin:3rem auto;padding:0 1rem;font:14px/1.5 system-ui,sans-serif;color:#1e293b">
+          <h1 style="font-size:1.4rem;margin-bottom:.5rem">purePSF — Singapore property transaction map</h1>
+          <p>
+            purePSF is an interactive map of real Singapore property transaction prices,
+            built on URA private-sale data (2021–present), HDB resale data (1990–present),
+            and CEA salesperson activity records. It needs JavaScript to render the map
+            and charts.
+          </p>
+          <p>
+            <strong>What you can do:</strong> click any project to see its PSF history,
+            tenure and remaining lease, full transaction list, and a comparison against
+            nearby properties. Click a planning subzone to see its monthly PSF trend
+            and the most active agents in the surrounding planning area. The
+            <a href="/agents">/agents</a> page ranks salespeople by town, property type
+            and transaction side.
+          </p>
+          <p>
+            <em>Independent project. Data sourced from URA, HDB and CEA under the
+            <a href="https://www.ura.gov.sg/ms/eservices/Maps/acceptance-grant-licence">Singapore Open Data Licence</a>.
+            Not affiliated with or endorsed by any government agency.</em>
+          </p>
+        </main>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

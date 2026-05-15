@@ -40,6 +40,8 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 		r.Use(metrics.Middleware)
 
 		r.Get("/healthz", s.handleHealth)
+		r.Get("/robots.txt", s.handleRobotsTxt)
+		r.Get("/sitemap.xml", s.handleSitemapXML)
 		r.Route("/api", func(r chi.Router) {
 			r.Get("/projects", s.handleListProjects)
 			r.Get("/projects/{id}", s.handleGetProject)

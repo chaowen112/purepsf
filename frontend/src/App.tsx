@@ -1,78 +1,51 @@
-import { useCallback, useState } from 'react'
-import MapView, { type LayerMode } from './components/MapView'
-import ProjectPanel from './components/ProjectPanel'
-import SubzonePanel from './components/SubzonePanel'
-import AgentsView from './components/AgentsView'
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Helmet } from 'react-helmet-async'
 import SearchBox from './components/SearchBox'
-import { fetchProject, fetchProjects, type ProjectSummary, type SearchHit } from './api'
+import MapShell from './routes/MapShell'
+import ProjectRoute from './routes/ProjectRoute'
+import SubzoneRoute from './routes/SubzoneRoute'
+import AgentsRoute from './routes/AgentsRoute'
+import { slugify } from './lib/slug'
+import type { SearchHit } from './api'
 
-type View = 'map' | 'agents'
-type FlyTarget = { lng: number; lat: number; zoom?: number; nonce: number }
+const SITE = 'https://purepsf.tet.sg'
 
 export default function App() {
-  const [view, setView] = useState<View>('map')
-  const [projects, setProjects] = useState<ProjectSummary[]>([])
-  const [selected, setSelected] = useState<ProjectSummary | null>(null)
-  const [selectedSubzoneId, setSelectedSubzoneId] = useState<number | null>(null)
-  const [layerMode, setLayerMode] = useState<LayerMode>('markers')
-  const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null)
+  const navigate = useNavigate()
+  const location = useLocation()
 
-  const handleBoundsChange = useCallback(async (bbox: [number, number, number, number]) => {
-    try {
-      const data = await fetchProjects(bbox)
-      setProjects(data)
-    } catch (e) {
-      console.error('fetchProjects', e)
-    }
-  }, [])
-
-  const handleSelect = useCallback((id: number) => {
-    const p = projects.find((p) => p.id === id)
-    if (p) {
-      setSelected(p)
-      setSelectedSubzoneId(null)
-    }
-  }, [projects])
-
-  const handleSelectSubzone = useCallback((id: number) => {
-    setSelectedSubzoneId(id)
-    setSelected(null)
-  }, [])
-
-  const handleClose = useCallback(() => {
-    setSelected(null)
-    setSelectedSubzoneId(null)
-  }, [])
-
-  const handleSearchPick = useCallback(async (hit: SearchHit) => {
-    setView('map')
-    if (hit.lat != null && hit.lng != null) {
-      setFlyTarget({
-        lng: hit.lng, lat: hit.lat,
-        zoom: hit.type === 'subzone' ? 14 : 16,
-        nonce: Date.now(),
-      })
-    }
+  const handleSearchPick = (hit: SearchHit) => {
+    const slug = slugify(hit.label)
     if (hit.type === 'subzone') {
-      setSelected(null)
-      setSelectedSubzoneId(hit.id)
+      navigate(`/z/${hit.id}/${slug}`)
     } else {
-      setSelectedSubzoneId(null)
-      try {
-        const p = await fetchProject(hit.id)
-        setSelected(p)
-      } catch (e) { console.error('fetchProject', e) }
+      navigate(`/p/${hit.id}/${slug}`)
     }
-  }, [])
+  }
 
   return (
     <div className="flex h-screen flex-col">
+      {/* Default site-wide head; route components override per-page. */}
+      <Helmet>
+        <title>purePSF — Singapore property transaction map (URA + HDB)</title>
+        <meta
+          name="description"
+          content="Explore real Singapore property transaction prices from URA private sales and HDB resale on an interactive map. PSF charts, subzone comparisons, lease info, and agent activity — sourced from data.gov.sg under the Singapore Open Data Licence."
+        />
+        <link rel="canonical" href={SITE + location.pathname} />
+        <meta property="og:title" content="purePSF — Singapore transaction map" />
+        <meta property="og:description" content="Real transaction prices, mapped. URA + HDB, 1990 to today." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={SITE + location.pathname} />
+        <meta name="twitter:card" content="summary_large_image" />
+      </Helmet>
+
       <header className="flex items-center justify-between border-b bg-white px-4 py-2.5 shadow-sm flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-slate-800">purePSF</h1>
+          <Link to="/" className="text-lg font-semibold text-slate-800 hover:text-slate-900">purePSF</Link>
           <nav className="flex gap-1 text-sm">
-            <NavBtn label="Map"    active={view === 'map'}    onClick={() => setView('map')} />
-            <NavBtn label="Agents" active={view === 'agents'} onClick={() => setView('agents')} />
+            <NavBtn to="/" label="Map" end />
+            <NavBtn to="/agents" label="Agents" />
           </nav>
           <SearchBox onPick={handleSearchPick} />
         </div>
@@ -83,71 +56,49 @@ export default function App() {
             href="https://www.ura.gov.sg/ms/eservices/Maps/acceptance-grant-licence"
             target="_blank"
             rel="noreferrer"
-          >
-            Singapore Open Data Licence
-          </a>
+          >Singapore Open Data Licence</a>
         </p>
       </header>
+
       <main className="flex flex-1 overflow-hidden">
-        {view === 'agents' ? <AgentsView /> : (
-        <>
-        <div className={`relative flex-1 transition-all ${selected || selectedSubzoneId ? 'mr-[360px]' : ''}`}>
-          <MapView
-            projects={projects}
-            selectedId={selected?.id ?? null}
-            onSelect={handleSelect}
-            onSelectSubzone={handleSelectSubzone}
-            onBoundsChange={handleBoundsChange}
-            layerMode={layerMode}
-            flyTarget={flyTarget}
-          />
-          <LayerToggle value={layerMode} onChange={setLayerMode} />
-        </div>
-        {(selected || selectedSubzoneId) && (
-          <aside className="absolute right-0 top-[52px] bottom-0 w-[360px] overflow-hidden border-l">
-            {selected
-              ? <ProjectPanel project={selected} onClose={handleClose} />
-              : selectedSubzoneId
-                ? <SubzonePanel subzoneId={selectedSubzoneId} onClose={handleClose} />
-                : null}
-          </aside>
-        )}
-        </>
-        )}
+        <Routes>
+          <Route path="/" element={<MapShell />}>
+            <Route index element={null} />
+            <Route path="p/:id" element={<ProjectRoute />} />
+            <Route path="p/:id/:slug" element={<ProjectRoute />} />
+            <Route path="z/:id" element={<SubzoneRoute />} />
+            <Route path="z/:id/:slug" element={<SubzoneRoute />} />
+          </Route>
+          <Route path="/agents" element={<AgentsRoute />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </main>
     </div>
   )
 }
 
-function NavBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function NavBtn({ to, label, end }: { to: string; label: string; end?: boolean }) {
   return (
-    <button
-      onClick={onClick}
-      className={`rounded px-3 py-1 ${active ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `rounded px-3 py-1 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'}`
+      }
     >
       {label}
-    </button>
+    </NavLink>
   )
 }
 
-function LayerToggle({ value, onChange }: { value: LayerMode; onChange: (m: LayerMode) => void }) {
-  const opts: Array<{ key: LayerMode; label: string }> = [
-    { key: 'markers', label: 'Markers' },
-    { key: 'subzones', label: 'Subzone PSF' },
-  ]
+function NotFound() {
   return (
-    <div className="absolute right-3 top-3 z-10 inline-flex rounded-md bg-white/95 shadow text-xs">
-      {opts.map((o, i) => (
-        <button
-          key={o.key}
-          onClick={() => onChange(o.key)}
-          className={`px-3 py-1.5 ${i > 0 ? 'border-l border-slate-200' : ''} ${
-            value === o.key ? 'font-semibold text-slate-800' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div className="flex h-full w-full items-center justify-center text-slate-500">
+      <Helmet><title>Not found · purePSF</title></Helmet>
+      <div className="text-center">
+        <p className="text-lg">Page not found.</p>
+        <Link className="text-blue-600 underline text-sm" to="/">Back to the map</Link>
+      </div>
     </div>
   )
 }
