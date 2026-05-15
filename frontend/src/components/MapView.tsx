@@ -9,6 +9,7 @@ type Props = {
   projects: ProjectSummary[]
   selectedId: number | null
   onSelect: (id: number) => void
+  onSelectSubzone: (id: number) => void
   onBoundsChange: (bbox: [number, number, number, number]) => void
   layerMode: LayerMode
 }
@@ -29,7 +30,7 @@ const colorExpression = (): maplibregl.ExpressionSpecification => [
   ...PSF_COLORS.flat(),
 ] as maplibregl.ExpressionSpecification
 
-export default function MapView({ projects, selectedId, onSelect, onBoundsChange, layerMode }: Props) {
+export default function MapView({ projects, selectedId, onSelect, onSelectSubzone, onBoundsChange, layerMode }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -37,8 +38,10 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
   // Map handlers are registered once at mount inside map.on('load'); use refs
   // so they always read the latest props instead of the stale initial closure.
   const onSelectRef = useRef(onSelect)
+  const onSelectSubzoneRef = useRef(onSelectSubzone)
   const onBoundsRef = useRef(onBoundsChange)
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
+  useEffect(() => { onSelectSubzoneRef.current = onSelectSubzone }, [onSelectSubzone])
   useEffect(() => { onBoundsRef.current = onBoundsChange }, [onBoundsChange])
   const [hoverSubzone, setHoverSubzone] = useState<{
     name: string; area: string; avgPsf: number | null; count: number; x: number; y: number
@@ -145,6 +148,19 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
         map.getCanvas().style.cursor = 'pointer'
       })
       map.on('mouseleave', 'projects-circle', () => {
+        map.getCanvas().style.cursor = ''
+      })
+
+      map.on('click', 'subzones-fill', (e) => {
+        const feat = e.features?.[0]
+        const id = feat?.properties?.id
+        if (typeof id === 'number') onSelectSubzoneRef.current(id)
+      })
+
+      map.on('mouseenter', 'subzones-fill', () => {
+        map.getCanvas().style.cursor = 'pointer'
+      })
+      map.on('mouseleave', 'subzones-fill', () => {
         map.getCanvas().style.cursor = ''
       })
 

@@ -46,6 +46,10 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 			r.Get("/projects/{id}/comparison", s.handleProjectComparison)
 			r.Get("/tracked", s.handleTracked)
 			r.Get("/subzones/stats", s.handleSubzoneStats)
+			r.Get("/subzones/{id}", s.handleSubzoneSummary)
+			r.Get("/subzones/{id}/transactions", s.handleSubzoneTransactions)
+			r.Get("/subzones/{id}/psf-timeseries", s.handleSubzoneTimeseries)
+			r.Get("/subzones/{id}/agents", s.handleSubzoneAgents)
 		})
 	})
 	return r

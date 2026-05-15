@@ -82,3 +82,64 @@ export function fetchSubzoneStats(params: { from?: string; to?: string } = {}) {
   const qs = q.toString()
   return get<SubzoneFC>(`/api/subzones/stats${qs ? '?' + qs : ''}`)
 }
+
+export type SubzoneSummary = {
+  id: number
+  subzone_name: string
+  planning_area?: string
+  region?: string
+  avg_psf?: number
+  transaction_count: number
+  date_from?: string
+  date_to?: string
+  cea_town?: string
+}
+
+export type SubzoneTransaction = Transaction & {
+  project_name: string
+  source: 'URA' | 'HDB'
+}
+
+export type PsfBucket = { month: string; avg_psf: number; count: number }
+
+export type Agent = {
+  name: string
+  registration_no: string
+  estate_agent?: string
+  total_txns: number
+  hdb_pct: number
+  condo_pct: number
+  seller_pct: number
+  buyer_pct: number
+}
+
+export function fetchSubzoneSummary(id: number) {
+  return get<SubzoneSummary>(`/api/subzones/${id}`)
+}
+
+export function fetchSubzoneTransactions(id: number, opts: { limit?: number; offset?: number } = {}) {
+  const q = new URLSearchParams()
+  if (opts.limit) q.set('limit', String(opts.limit))
+  if (opts.offset) q.set('offset', String(opts.offset))
+  const qs = q.toString()
+  return get<SubzoneTransaction[]>(`/api/subzones/${id}/transactions${qs ? '?' + qs : ''}`)
+}
+
+export function fetchSubzoneTimeseries(id: number) {
+  return get<PsfBucket[]>(`/api/subzones/${id}/psf-timeseries`)
+}
+
+export function fetchSubzoneAgents(id: number, opts: {
+  property_type?: 'HDB' | 'CONDOMINIUM' | 'LANDED' | 'EXECUTIVE CONDOMINIUM'
+  represented?: 'SELLER' | 'BUYER' | 'LANDLORD' | 'TENANT'
+  from?: string; to?: string; limit?: number
+} = {}) {
+  const q = new URLSearchParams()
+  if (opts.property_type) q.set('property_type', opts.property_type)
+  if (opts.represented) q.set('represented', opts.represented)
+  if (opts.from) q.set('from', opts.from)
+  if (opts.to) q.set('to', opts.to)
+  if (opts.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return get<Agent[]>(`/api/subzones/${id}/agents${qs ? '?' + qs : ''}`)
+}
