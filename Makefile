@@ -1,4 +1,4 @@
-.PHONY: help up down logs ps psql backend-build backend-run backend-test frontend-dev frontend-build etl-install etl-test sqlc-gen
+.PHONY: help up down logs ps psql backend-build backend-run backend-test frontend-dev frontend-build etl-install etl-test sqlc-gen verify-db smoke-api
 
 SHELL := /bin/bash
 
@@ -49,3 +49,11 @@ frontend-dev:  ## Run Vite dev server
 
 frontend-build:  ## Production build
 	cd frontend && npm run build
+
+# --- Verification ---
+
+verify-db:  ## Run DB sanity checks (counts, PSF distribution, geocode coverage)
+	set -a && source .env && set +a && psql "$$DATABASE_URL" -f infra/verify.sql
+
+smoke-api:  ## Smoke-test all API endpoints (backend must be running)
+	./scripts/smoke_api.sh

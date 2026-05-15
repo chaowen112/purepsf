@@ -3,9 +3,9 @@ import {
   CartesianGrid, ResponsiveContainer, Scatter, ScatterChart,
   Tooltip, XAxis, YAxis, ReferenceLine,
 } from 'recharts'
-import { fetchComparison, fetchTransactions, type Comparison, type Transaction } from '../api'
+import { fetchComparison, fetchTransactions, type Comparison, type ProjectSummary, type Transaction } from '../api'
 
-type Props = { projectId: number; projectName: string; onClose: () => void }
+type Props = { project: ProjectSummary; onClose: () => void }
 
 const SALE_COLORS: Record<string, string> = {
   'New Sale': '#3b82f6',
@@ -21,7 +21,7 @@ function fmtDate(ms: number) {
   return new Date(ms).toLocaleDateString('en-SG', { year: 'numeric', month: 'short' })
 }
 
-export default function ProjectPanel({ projectId, projectName, onClose }: Props) {
+export default function ProjectPanel({ project, onClose }: Props) {
   const [txns, setTxns] = useState<Transaction[] | null>(null)
   const [comp, setComp] = useState<Comparison | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,13 +31,19 @@ export default function ProjectPanel({ projectId, projectName, onClose }: Props)
     setTxns(null)
     setComp(null)
     Promise.all([
-      fetchTransactions(projectId),
-      fetchComparison(projectId),
+      fetchTransactions(project.id),
+      fetchComparison(project.id),
     ]).then(([t, c]) => {
       setTxns(t)
       setComp(c)
     }).finally(() => setLoading(false))
-  }, [projectId])
+  }, [project.id])
+
+  const addrBits = [
+    project.street,
+    project.district ? `D${project.district}` : null,
+    project.market_segment,
+  ].filter(Boolean)
 
   // Group by type_of_sale
   const byType = txns
@@ -56,12 +62,27 @@ export default function ProjectPanel({ projectId, projectName, onClose }: Props)
     <div className="flex h-full flex-col bg-white shadow-xl">
       {/* Header */}
       <div className="flex items-start justify-between border-b px-4 py-3">
-        <div>
-          <h2 className="font-semibold text-slate-800 leading-tight">{projectName}</h2>
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-800 leading-tight truncate">{project.name}</h2>
+          {addrBits.length > 0 && (
+            <p className="text-xs text-slate-500 mt-0.5 truncate">{addrBits.join(' · ')}</p>
+          )}
+          <div className="flex gap-1.5 mt-1">
+            <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+              project.source === 'URA' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
+            }`}>
+              {project.source}
+            </span>
+            {project.property_type && (
+              <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                {project.property_type}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={onClose}
-          className="ml-2 mt-0.5 text-slate-400 hover:text-slate-700 text-xl leading-none"
+          className="ml-2 mt-0.5 text-slate-400 hover:text-slate-700 text-xl leading-none flex-shrink-0"
         >
           ×
         </button>

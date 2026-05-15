@@ -5,8 +5,7 @@ import { fetchProjects, type ProjectSummary } from './api'
 
 export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [selectedName, setSelectedName] = useState('')
+  const [selected, setSelected] = useState<ProjectSummary | null>(null)
 
   const handleBoundsChange = useCallback(async (bbox: [number, number, number, number]) => {
     try {
@@ -19,14 +18,10 @@ export default function App() {
 
   const handleSelect = useCallback((id: number) => {
     const p = projects.find((p) => p.id === id)
-    setSelectedId(id)
-    setSelectedName(p?.name ?? '')
+    if (p) setSelected(p)
   }, [projects])
 
-  const handleClose = useCallback(() => {
-    setSelectedId(null)
-    setSelectedName('')
-  }, [])
+  const handleClose = useCallback(() => setSelected(null), [])
 
   return (
     <div className="flex h-screen flex-col">
@@ -47,21 +42,17 @@ export default function App() {
         </div>
       </header>
       <main className="flex flex-1 overflow-hidden">
-        <div className={`flex-1 transition-all ${selectedId ? 'mr-[360px]' : ''}`}>
+        <div className={`flex-1 transition-all ${selected ? 'mr-[360px]' : ''}`}>
           <MapView
             projects={projects}
-            selectedId={selectedId}
+            selectedId={selected?.id ?? null}
             onSelect={handleSelect}
             onBoundsChange={handleBoundsChange}
           />
         </div>
-        {selectedId && (
+        {selected && (
           <aside className="absolute right-0 top-[52px] bottom-0 w-[360px] overflow-hidden border-l">
-            <ProjectPanel
-              projectId={selectedId}
-              projectName={selectedName}
-              onClose={handleClose}
-            />
+            <ProjectPanel project={selected} onClose={handleClose} />
           </aside>
         )}
       </main>
