@@ -143,16 +143,20 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 // ---- /api/projects/{id}/transactions ----
 
 type transaction struct {
-	ID              int64    `json:"id"`
-	ContractDate    string   `json:"contract_date"`
-	AreaSqm         *float64 `json:"area_sqm,omitempty"`
-	Price           float64  `json:"price"`
-	PSF             *float64 `json:"psf,omitempty"`
-	FloorRange      *string  `json:"floor_range,omitempty"`
-	PropertyType    *string  `json:"property_type,omitempty"`
-	TypeOfSale      *string  `json:"type_of_sale,omitempty"`
-	FlatType        *string  `json:"flat_type,omitempty"`
-	NoOfUnits       *int32   `json:"no_of_units,omitempty"`
+	ID                  int64    `json:"id"`
+	ContractDate        string   `json:"contract_date"`
+	AreaSqm             *float64 `json:"area_sqm,omitempty"`
+	Price               float64  `json:"price"`
+	PSF                 *float64 `json:"psf,omitempty"`
+	FloorRange          *string  `json:"floor_range,omitempty"`
+	PropertyType        *string  `json:"property_type,omitempty"`
+	TypeOfSale          *string  `json:"type_of_sale,omitempty"`
+	FlatType            *string  `json:"flat_type,omitempty"`
+	NoOfUnits           *int32   `json:"no_of_units,omitempty"`
+	// Remaining lease (in years) computed at the contract_date — derived
+	// from the project's tenure_type + lease_commence_year. Null for
+	// freehold / unknown-tenure projects.
+	RemainingLeaseAtTxn *int32   `json:"remaining_lease_at_txn,omitempty"`
 }
 
 func (s *Server) handleProjectTransactions(w http.ResponseWriter, r *http.Request) {
@@ -166,13 +170,21 @@ func (s *Server) handleProjectTransactions(w http.ResponseWriter, r *http.Reques
 	to := r.URL.Query().Get("to")
 
 	const q = `
-		SELECT id, contract_date::text, area_sqm::float8, price::float8, psf::float8,
-		       floor_range, property_type, type_of_sale, flat_type, no_of_units
-		FROM transactions
-		WHERE project_id = $1
-		  AND ($2::date IS NULL OR contract_date >= $2::date)
-		  AND ($3::date IS NULL OR contract_date <= $3::date)
-		ORDER BY contract_date DESC, id DESC`
+		SELECT t.id, t.contract_date::text, t.area_sqm::float8, t.price::float8, t.psf::float8,
+		       t.floor_range, t.property_type, t.type_of_sale, t.flat_type, t.no_of_units,
+		       CASE
+		           WHEN p.tenure_type = '99-year'  AND p.lease_commence_year IS NOT NULL
+		               THEN GREATEST(0, 99  - (EXTRACT(year FROM t.contract_date)::int - p.lease_commence_year))::int
+		           WHEN p.tenure_type = '999-year' AND p.lease_commence_year IS NOT NULL
+		               THEN GREATEST(0, 999 - (EXTRACT(year FROM t.contract_date)::int - p.lease_commence_year))::int
+		           ELSE NULL
+		       END AS remaining_lease_at_txn
+		FROM transactions t
+		JOIN projects p ON p.id = t.project_id
+		WHERE t.project_id = $1
+		  AND ($2::date IS NULL OR t.contract_date >= $2::date)
+		  AND ($3::date IS NULL OR t.contract_date <= $3::date)
+		ORDER BY t.contract_date DESC, t.id DESC`
 
 	fromParam := nullStr(from)
 	toParam := nullStr(to)
@@ -191,6 +203,7 @@ func (s *Server) handleProjectTransactions(w http.ResponseWriter, r *http.Reques
 		if err := rows.Scan(
 			&t.ID, &t.ContractDate, &t.AreaSqm, &t.Price, &t.PSF,
 			&t.FloorRange, &t.PropertyType, &t.TypeOfSale, &t.FlatType, &t.NoOfUnits,
+			&t.RemainingLeaseAtTxn,
 		); err != nil {
 			s.logger.Error("handleProjectTransactions scan", "err", err)
 			writeError(w, http.StatusInternalServerError, "scan error")

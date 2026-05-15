@@ -168,7 +168,14 @@ func (s *Server) handleSubzoneTransactions(w http.ResponseWriter, r *http.Reques
 	const q = `
 		SELECT t.id, t.contract_date::text, t.area_sqm::float8, t.price::float8, t.psf::float8,
 		       t.floor_range, t.property_type, t.type_of_sale, t.flat_type, t.no_of_units,
-		       p.name AS project_name, p.source::text AS source
+		       p.name AS project_name, p.source::text AS source,
+		       CASE
+		           WHEN p.tenure_type = '99-year'  AND p.lease_commence_year IS NOT NULL
+		               THEN GREATEST(0, 99  - (EXTRACT(year FROM t.contract_date)::int - p.lease_commence_year))::int
+		           WHEN p.tenure_type = '999-year' AND p.lease_commence_year IS NOT NULL
+		               THEN GREATEST(0, 999 - (EXTRACT(year FROM t.contract_date)::int - p.lease_commence_year))::int
+		           ELSE NULL
+		       END AS remaining_lease_at_txn
 		FROM transactions t
 		JOIN projects p ON p.id = t.project_id
 		JOIN planning_subzones z ON z.id = $1
@@ -186,18 +193,19 @@ func (s *Server) handleSubzoneTransactions(w http.ResponseWriter, r *http.Reques
 	defer rows.Close()
 
 	type row struct {
-		ID           int64    `json:"id"`
-		ContractDate string   `json:"contract_date"`
-		AreaSqm      *float64 `json:"area_sqm,omitempty"`
-		Price        float64  `json:"price"`
-		PSF          *float64 `json:"psf,omitempty"`
-		FloorRange   *string  `json:"floor_range,omitempty"`
-		PropertyType *string  `json:"property_type,omitempty"`
-		TypeOfSale   *string  `json:"type_of_sale,omitempty"`
-		FlatType     *string  `json:"flat_type,omitempty"`
-		NoOfUnits    *int32   `json:"no_of_units,omitempty"`
-		ProjectName  string   `json:"project_name"`
-		Source       string   `json:"source"`
+		ID                  int64    `json:"id"`
+		ContractDate        string   `json:"contract_date"`
+		AreaSqm             *float64 `json:"area_sqm,omitempty"`
+		Price               float64  `json:"price"`
+		PSF                 *float64 `json:"psf,omitempty"`
+		FloorRange          *string  `json:"floor_range,omitempty"`
+		PropertyType        *string  `json:"property_type,omitempty"`
+		TypeOfSale          *string  `json:"type_of_sale,omitempty"`
+		FlatType            *string  `json:"flat_type,omitempty"`
+		NoOfUnits           *int32   `json:"no_of_units,omitempty"`
+		ProjectName         string   `json:"project_name"`
+		Source              string   `json:"source"`
+		RemainingLeaseAtTxn *int32   `json:"remaining_lease_at_txn,omitempty"`
 	}
 	out := make([]row, 0, limit)
 	for rows.Next() {
@@ -205,7 +213,7 @@ func (s *Server) handleSubzoneTransactions(w http.ResponseWriter, r *http.Reques
 		if err := rows.Scan(
 			&t.ID, &t.ContractDate, &t.AreaSqm, &t.Price, &t.PSF,
 			&t.FloorRange, &t.PropertyType, &t.TypeOfSale, &t.FlatType, &t.NoOfUnits,
-			&t.ProjectName, &t.Source,
+			&t.ProjectName, &t.Source, &t.RemainingLeaseAtTxn,
 		); err != nil {
 			s.logger.Error("handleSubzoneTransactions scan", "err", err)
 			writeError(w, http.StatusInternalServerError, "scan error")

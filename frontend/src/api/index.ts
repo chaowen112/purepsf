@@ -28,6 +28,7 @@ export type Transaction = {
   type_of_sale?: string
   flat_type?: string
   no_of_units?: number
+  remaining_lease_at_txn?: number
 }
 
 export type Comparison = {

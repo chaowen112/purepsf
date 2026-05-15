@@ -91,7 +91,6 @@ export default function ProjectPanel({ project, onClose }: Props) {
               </span>
             ))}
           </div>
-          <TenureLine project={project} />
         </div>
         <button
           onClick={onClose}
@@ -103,6 +102,9 @@ export default function ProjectPanel({ project, onClose }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
         {loading && <p className="text-sm text-slate-400">Loading…</p>}
+
+        {/* Tenure / lease block */}
+        <TenureBlock project={project} />
 
         {/* Comparison stats */}
         {comp && (
@@ -206,30 +208,63 @@ export default function ProjectPanel({ project, onClose }: Props) {
   )
 }
 
-function TenureLine({ project }: { project: ProjectSummary }) {
+function TenureBlock({ project }: { project: ProjectSummary }) {
   if (!project.tenure_type) return null
   const tt = project.tenure_type
   const yr = project.lease_commence_year
   const rem = project.remaining_lease_years
-  let body: React.ReactNode
+
+  // For HDB, lease commencement ≈ TOP year (a BTO's lease starts on completion).
+  // For URA, lease commencement is the *land* lease start — often years before
+  // the building TOP. The free Data Service API doesn't expose real TOP year.
+  const topLabel = project.source === 'HDB' ? 'TOP year' : 'Lease since'
+
   if (tt === 'Freehold') {
-    body = <span className="font-medium text-emerald-700">Freehold</span>
-  } else if (tt === '99-year' || tt === '999-year') {
-    body = (
-      <>
-        <span className="font-medium">{tt}</span>
-        {yr && <span> · from {yr}</span>}
-        {rem != null && (
-          <span className={rem < 60 ? 'text-amber-700' : 'text-slate-500'}>
-            {' · '}{rem} yrs left
-          </span>
-        )}
-      </>
+    return (
+      <div className="rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+        <div className="text-xs text-emerald-700 font-medium uppercase tracking-wide">Freehold</div>
+        <div className="text-xs text-slate-500 mt-0.5">No lease — owner holds the land in perpetuity.</div>
+      </div>
     )
-  } else {
-    body = <span>{tt}{yr && ` · from ${yr}`}</span>
   }
-  return <p className="text-xs text-slate-500 mt-1">{body}</p>
+
+  const remBand =
+    rem == null ? 'text-slate-700' :
+    rem < 60 ? 'text-amber-700' :
+    rem < 30 ? 'text-red-700' :
+    'text-slate-800'
+
+  return (
+    <div className="rounded-md border border-slate-200 px-3 py-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{tt} lease</div>
+        {rem != null && (
+          <div className={`text-sm font-semibold tabular-nums ${remBand}`}>
+            {rem} yrs left
+          </div>
+        )}
+      </div>
+      {yr != null && (
+        <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <div className="text-slate-400">{topLabel}</div>
+            <div className="text-slate-700 tabular-nums">{yr}</div>
+          </div>
+          <div>
+            <div className="text-slate-400">Expires</div>
+            <div className="text-slate-700 tabular-nums">
+              {yr + (tt === '999-year' ? 999 : 99)}
+            </div>
+          </div>
+        </div>
+      )}
+      {project.source !== 'HDB' && (
+        <p className="mt-1 text-[10px] text-slate-400">
+          URA records land-lease commencement; building TOP can be 3–8 years later.
+        </p>
+      )}
+    </div>
+  )
 }
 
 function Stat({ label, value, sub, accent }: {
@@ -294,6 +329,7 @@ function TransactionList({ txns, projectName }: { txns: Transaction[]; projectNa
 }
 
 function CompactTable({ rows }: { rows: Transaction[] }) {
+  const anyLease = rows.some((r) => r.remaining_lease_at_txn != null)
   return (
     <div className="overflow-x-auto rounded border border-slate-100">
       <table className="w-full text-xs">
@@ -303,6 +339,7 @@ function CompactTable({ rows }: { rows: Transaction[] }) {
             <th className="px-2 py-1.5 text-right font-medium">Area</th>
             <th className="px-2 py-1.5 text-right font-medium">Price</th>
             <th className="px-2 py-1.5 text-right font-medium">PSF</th>
+            {anyLease && <th className="px-2 py-1.5 text-right font-medium" title="Years of lease remaining at the contract date">Lease@</th>}
             <th className="px-2 py-1.5 text-left font-medium">Detail</th>
           </tr>
         </thead>
@@ -324,6 +361,11 @@ function CompactTable({ rows }: { rows: Transaction[] }) {
                 <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
                   {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
                 </td>
+                {anyLease && (
+                  <td className="px-2 py-1 text-right tabular-nums text-slate-600">
+                    {t.remaining_lease_at_txn != null ? `${t.remaining_lease_at_txn}y` : '—'}
+                  </td>
+                )}
                 <td className="px-2 py-1 text-slate-500 truncate max-w-[120px]" title={detail}>
                   {detail || '—'}
                 </td>
@@ -377,6 +419,7 @@ function TransactionModal({
                 <th className="px-3 py-2 text-right font-medium">Area</th>
                 <th className="px-3 py-2 text-right font-medium">Price</th>
                 <th className="px-3 py-2 text-right font-medium">PSF</th>
+                <th className="px-3 py-2 text-right font-medium" title="Years of lease remaining at the contract date">Lease@</th>
                 <th className="px-3 py-2 text-left font-medium">Floor</th>
                 <th className="px-3 py-2 text-left font-medium">Type</th>
                 <th className="px-3 py-2 text-left font-medium">Flat/Property</th>
@@ -394,6 +437,9 @@ function TransactionModal({
                   </td>
                   <td className="px-3 py-1.5 text-right text-slate-700 tabular-nums">
                     {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-slate-600 tabular-nums">
+                    {t.remaining_lease_at_txn != null ? `${t.remaining_lease_at_txn}y` : '—'}
                   </td>
                   <td className="px-3 py-1.5 text-slate-600">{t.floor_range ?? '—'}</td>
                   <td className="px-3 py-1.5 text-slate-600">{t.type_of_sale ?? '—'}</td>
