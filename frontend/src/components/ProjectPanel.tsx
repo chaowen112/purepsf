@@ -190,7 +190,9 @@ export default function ProjectPanel({ project, onClose }: Props) {
         )}
 
         {/* Transaction list */}
-        {txns && txns.length > 0 && <TransactionList txns={txns} />}
+        {txns && txns.length > 0 && (
+          <TransactionList txns={txns} projectName={project.name} />
+        )}
 
         {/* Date range footer */}
         {txns && comp?.own.date_from && comp?.own.date_to && (
@@ -217,12 +219,13 @@ function Stat({ label, value, sub, accent }: {
 
 const INITIAL_ROWS = 50
 
-function TransactionList({ txns }: { txns: Transaction[] }) {
-  const [expanded, setExpanded] = useState(false)
+function TransactionList({ txns, projectName }: { txns: Transaction[]; projectName: string }) {
+  const [showAll, setShowAll] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const total = txns.length
   const rows = useMemo(
-    () => (expanded ? txns : txns.slice(0, INITIAL_ROWS)),
-    [txns, expanded],
+    () => (showAll ? txns : txns.slice(0, INITIAL_ROWS)),
+    [txns, showAll],
   )
   const hidden = total - rows.length
 
@@ -232,54 +235,160 @@ function TransactionList({ txns }: { txns: Transaction[] }) {
         <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide">
           Transactions
         </h3>
-        <span className="text-xs text-slate-400">{total} total</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">{total} total</span>
+          <button
+            onClick={() => setModalOpen(true)}
+            title="View full screen"
+            className="text-slate-400 hover:text-slate-700 leading-none"
+          >
+            <ExpandIcon />
+          </button>
+        </div>
       </div>
-      <div className="overflow-x-auto rounded border border-slate-100">
-        <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-2 py-1.5 text-left font-medium">Date</th>
-              <th className="px-2 py-1.5 text-right font-medium">Area</th>
-              <th className="px-2 py-1.5 text-right font-medium">Price</th>
-              <th className="px-2 py-1.5 text-right font-medium">PSF</th>
-              <th className="px-2 py-1.5 text-left font-medium">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => {
-              const detail = [t.flat_type, t.floor_range, t.type_of_sale]
-                .filter(Boolean).join(' · ')
-              return (
-                <tr key={t.id} className="border-t border-slate-100">
-                  <td className="px-2 py-1 text-slate-700 whitespace-nowrap">
-                    {t.contract_date.slice(0, 7)}
-                  </td>
-                  <td className="px-2 py-1 text-right text-slate-600 tabular-nums">
-                    {t.area_sqm != null ? `${Math.round(t.area_sqm)}m²` : '—'}
-                  </td>
-                  <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
-                    {fmtPrice(t.price)}
-                  </td>
-                  <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
-                    {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
-                  </td>
-                  <td className="px-2 py-1 text-slate-500 truncate max-w-[120px]" title={detail}>
-                    {detail || '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <CompactTable rows={rows} />
       {hidden > 0 && (
         <button
-          onClick={() => setExpanded(true)}
+          onClick={() => setShowAll(true)}
           className="mt-2 text-xs text-blue-600 hover:underline"
         >
           Show {hidden} more
         </button>
       )}
+      {modalOpen && (
+        <TransactionModal
+          txns={txns}
+          projectName={projectName}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+function CompactTable({ rows }: { rows: Transaction[] }) {
+  return (
+    <div className="overflow-x-auto rounded border border-slate-100">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5 text-left font-medium">Date</th>
+            <th className="px-2 py-1.5 text-right font-medium">Area</th>
+            <th className="px-2 py-1.5 text-right font-medium">Price</th>
+            <th className="px-2 py-1.5 text-right font-medium">PSF</th>
+            <th className="px-2 py-1.5 text-left font-medium">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t) => {
+            const detail = [t.flat_type, t.floor_range, t.type_of_sale]
+              .filter(Boolean).join(' · ')
+            return (
+              <tr key={t.id} className="border-t border-slate-100">
+                <td className="px-2 py-1 text-slate-700 whitespace-nowrap">
+                  {t.contract_date.slice(0, 7)}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-600 tabular-nums">
+                  {t.area_sqm != null ? `${Math.round(t.area_sqm)}m²` : '—'}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
+                  {fmtPrice(t.price)}
+                </td>
+                <td className="px-2 py-1 text-right text-slate-700 tabular-nums">
+                  {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
+                </td>
+                <td className="px-2 py-1 text-slate-500 truncate max-w-[120px]" title={detail}>
+                  {detail || '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function TransactionModal({
+  txns, projectName, onClose,
+}: { txns: Transaction[]; projectName: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-full w-full max-w-5xl flex-col rounded-lg bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">{projectName}</h2>
+            <p className="text-xs text-slate-500">{txns.length} transactions</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 text-2xl leading-none"
+            title="Close (Esc)"
+          >×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-slate-500 shadow-sm">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Date</th>
+                <th className="px-3 py-2 text-right font-medium">Area</th>
+                <th className="px-3 py-2 text-right font-medium">Price</th>
+                <th className="px-3 py-2 text-right font-medium">PSF</th>
+                <th className="px-3 py-2 text-left font-medium">Floor</th>
+                <th className="px-3 py-2 text-left font-medium">Type</th>
+                <th className="px-3 py-2 text-left font-medium">Flat/Property</th>
+              </tr>
+            </thead>
+            <tbody>
+              {txns.map((t) => (
+                <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap">{t.contract_date}</td>
+                  <td className="px-3 py-1.5 text-right text-slate-600 tabular-nums">
+                    {t.area_sqm != null ? `${t.area_sqm.toFixed(0)} m²` : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-slate-700 tabular-nums">
+                    ${t.price.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-slate-700 tabular-nums">
+                    {t.psf != null ? `$${Math.round(t.psf).toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-600">{t.floor_range ?? '—'}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{t.type_of_sale ?? '—'}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{t.flat_type ?? t.property_type ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
   )
 }
