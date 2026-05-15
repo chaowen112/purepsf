@@ -30,6 +30,7 @@ frontend/dist/
 .DS_Store
 .idea/
 .vscode/
+.claude/
 *.swp
 
 # Data (raw URA downloads etc — too large + may have licence attribution requirements per file)

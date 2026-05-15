@@ -66,5 +66,23 @@ def cmd_planning_subzones(path: str) -> None:
     run(path=path)
 
 
+@main.command("cea-salespeople")
+@click.option("--limit", default=None, type=int, help="Max rows (default: all ~37k)")
+def cmd_cea_salespeople(limit: int | None) -> None:
+    """Ingest CEA salesperson registry (upsert by registration_no)."""
+    from etl.cea_salespeople import run
+
+    run(limit=limit)
+
+
+@main.command("cea-transactions")
+@click.option("--limit", default=None, type=int, help="Max rows (default: all ~1.3M)")
+def cmd_cea_transactions(limit: int | None) -> None:
+    """Full-reload CEA salesperson transaction records (TRUNCATE + COPY)."""
+    from etl.cea_transactions import run
+
+    run(limit=limit)
+
+
 if __name__ == "__main__":
     main()
