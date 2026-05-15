@@ -56,7 +56,9 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
         sources: {
           onemap: {
             type: 'raster',
-            tiles: ['https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png'],
+            // Relative path → goes through nginx (prod) or Vite proxy (dev)
+            // for disk-cached tile reuse.
+            tiles: ['/tiles/onemap/{z}/{x}/{y}.png'],
             tileSize: 256,
             attribution: '© OneMap | Singapore Land Authority',
             maxzoom: 19,
