@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import psycopg
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from etl import config
 from etl.db import connect
@@ -26,7 +27,6 @@ from etl.db import connect
 logger = logging.getLogger(__name__)
 
 TOKEN_CACHE = Path.home() / ".cache" / "purepsf" / "onemap_token.json"
-_COMMIT_EVERY = 200
 
 
 @dataclass
@@ -59,6 +59,7 @@ class OneMapClient:
         _save_cached_token(self._token, self._token_expiry)
         return self._token
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
     def search(self, query: str) -> list[dict[str, Any]]:
         token = self._ensure_token()
         resp = httpx.get(
@@ -156,10 +157,12 @@ def run() -> None:
         logger.info("geocoding %d HDB projects missing coordinates", len(projects))
 
         succeeded = failed = 0
+        total = len(projects)
         for i, proj in enumerate(projects):
             parts = proj["project_key"].split("|", 1)
             if len(parts) != 2:
                 failed += 1
+                conn.commit()
                 continue
             block, street = parts
 
@@ -174,13 +177,10 @@ def run() -> None:
             else:
                 failed += 1
 
-            if (i + 1) % _COMMIT_EVERY == 0:
-                conn.commit()
-                logger.info(
-                    "geocode progress: %d/%d ok=%d fail=%d",
-                    i + 1, len(projects), succeeded, failed,
-                )
+            # Commit every record so a crash loses at most one entry.
+            conn.commit()
 
-            time.sleep(0.5)
+            if (i + 1) % 200 == 0:
+                logger.info("geocode progress: %d/%d ok=%d fail=%d", i + 1, total, succeeded, failed)
 
         logger.info("geocoding done: succeeded=%d failed=%d", succeeded, failed)
