@@ -56,5 +56,15 @@ def cmd_backfill_postal() -> None:
     backfill_postal_codes()
 
 
+@main.command("planning-subzones")
+@click.option("--file", "path", required=True, type=click.Path(exists=True),
+              help="Path to URA MP19 Subzone Boundary GeoJSON")
+def cmd_planning_subzones(path: str) -> None:
+    """Load URA Master Plan 2019 subzone polygons from a GeoJSON file."""
+    from etl.planning_subzones import run
+
+    run(path=path)
+
+
 if __name__ == "__main__":
     main()

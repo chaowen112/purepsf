@@ -43,7 +43,9 @@ cd etl && source ../.env && \
     .venv/bin/purepsf-etl ura-transactions && \
     .venv/bin/purepsf-etl hdb-resale && \
     .venv/bin/purepsf-etl geocode-missing && \
-    .venv/bin/purepsf-etl backfill-postal     # offline: reads cached OneMap responses
+    .venv/bin/purepsf-etl backfill-postal && \
+    psql "$DATABASE_URL" -f ../infra/migrations/001_planning_subzones.sql && \
+    .venv/bin/purepsf-etl planning-subzones --file ../data/mp19_subzones.geojson
 make verify-db             # data sanity checks
 make backend-run &         # Go API on :8080
 make smoke-api             # API smoke tests
@@ -59,6 +61,7 @@ make frontend-dev          # Vite dev server on :5173
 | GET | `/api/projects/{id}/transactions?from=&to=` | Per-project transaction list |
 | GET | `/api/projects/{id}/comparison` | Own avg PSF, 500m-nearby avg PSF (last 24mo), premium % |
 | GET | `/api/tracked` | Tracked projects + latest stats |
+| GET | `/api/subzones/stats?from=&to=&source=` | GeoJSON FeatureCollection of MP19 subzones with avg PSF per polygon |
 
 ## Data sources
 
@@ -67,6 +70,7 @@ make frontend-dev          # Vite dev server on :5173
 | URA Data Service `PMI_Resi_Transaction` | Private sales, past 5 years, with SVY21 coords | Tue/Fri |
 | data.gov.sg `d_8b84c4ee58e3cfc0ece0d773c8ca6abc` | HDB resale, block + street | Monthly |
 | OneMap `/api/common/elastic/search` | HDB block → lat/lng/postcode | On demand (15k/hr) |
+| data.gov.sg "Master Plan 2019 Subzone Boundary (No Sea)" | ~330 planning subzone polygons | One-off (manual GeoJSON download to `data/mp19_subzones.geojson`) |
 
 ## Known limits
 

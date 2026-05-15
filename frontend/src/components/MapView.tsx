@@ -1,13 +1,16 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useRef } from 'react'
-import type { ProjectSummary } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { fetchSubzoneStats, type ProjectSummary, type SubzoneFC } from '../api'
+
+export type LayerMode = 'markers' | 'subzones'
 
 type Props = {
   projects: ProjectSummary[]
   selectedId: number | null
   onSelect: (id: number) => void
   onBoundsChange: (bbox: [number, number, number, number]) => void
+  layerMode: LayerMode
 }
 
 const PSF_COLORS: [number, string][] = [
@@ -26,10 +29,14 @@ const colorExpression = (): maplibregl.ExpressionSpecification => [
   ...PSF_COLORS.flat(),
 ] as maplibregl.ExpressionSpecification
 
-export default function MapView({ projects, selectedId, onSelect, onBoundsChange }: Props) {
+export default function MapView({ projects, selectedId, onSelect, onBoundsChange, layerMode }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const subzonesLoadedRef = useRef(false)
+  const [hoverSubzone, setHoverSubzone] = useState<{
+    name: string; area: string; avgPsf: number | null; count: number; x: number; y: number
+  } | null>(null)
 
   // Initialise map once
   useEffect(() => {
@@ -58,6 +65,37 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
     map.on('load', () => {
+      map.addSource('subzones', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+
+      map.addLayer({
+        id: 'subzones-fill',
+        type: 'fill',
+        source: 'subzones',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'case',
+            ['==', ['coalesce', ['get', 'count'], 0], 0],
+            '#f1f5f9',
+            ['interpolate', ['linear'],
+              ['coalesce', ['get', 'avg_psf'], 0],
+              ...PSF_COLORS.flat(),
+            ],
+          ],
+          'fill-opacity': 0.55,
+        },
+      })
+      map.addLayer({
+        id: 'subzones-outline',
+        type: 'line',
+        source: 'subzones',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#475569', 'line-width': 0.6, 'line-opacity': 0.7 },
+      })
+
       map.addSource('projects', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -101,6 +139,21 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
       map.on('mouseleave', 'projects-circle', () => {
         map.getCanvas().style.cursor = ''
       })
+
+      map.on('mousemove', 'subzones-fill', (e) => {
+        const feat = e.features?.[0]
+        if (!feat) return
+        const p = feat.properties as Record<string, unknown>
+        setHoverSubzone({
+          name: String(p.subzone_name ?? ''),
+          area: String(p.planning_area ?? ''),
+          avgPsf: typeof p.avg_psf === 'number' ? p.avg_psf : null,
+          count: Number(p.count ?? 0),
+          x: e.point.x,
+          y: e.point.y,
+        })
+      })
+      map.on('mouseleave', 'subzones-fill', () => setHoverSubzone(null))
 
       // Emit initial bounds
       const b = map.getBounds()
@@ -146,21 +199,64 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
     ])
   }, [selectedId])
 
+  // Layer mode toggle: markers vs subzones (lazy-load subzone data on first show)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map?.isStyleLoaded()) return
+    const showSubzones = layerMode === 'subzones'
+    map.setLayoutProperty('projects-circle', 'visibility', showSubzones ? 'none' : 'visible')
+    map.setLayoutProperty('projects-label', 'visibility', showSubzones ? 'none' : 'visible')
+    map.setLayoutProperty('subzones-fill', 'visibility', showSubzones ? 'visible' : 'none')
+    map.setLayoutProperty('subzones-outline', 'visibility', showSubzones ? 'visible' : 'none')
+
+    if (showSubzones && !subzonesLoadedRef.current) {
+      subzonesLoadedRef.current = true
+      fetchSubzoneStats({ source: 'URA' })
+        .then((fc: SubzoneFC) => {
+          const src = map.getSource('subzones') as maplibregl.GeoJSONSource | undefined
+          src?.setData(fc as unknown as GeoJSON.FeatureCollection)
+        })
+        .catch((e) => {
+          console.error('fetchSubzoneStats', e)
+          subzonesLoadedRef.current = false
+        })
+    }
+  }, [layerMode])
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      <PSFLegend />
+      <PSFLegend mode={layerMode} />
+      {hoverSubzone && layerMode === 'subzones' && (
+        <div
+          className="pointer-events-none absolute rounded bg-white/95 px-2 py-1 text-xs shadow border border-slate-100"
+          style={{ left: hoverSubzone.x + 12, top: hoverSubzone.y + 12 }}
+        >
+          <div className="font-medium text-slate-700">{hoverSubzone.name}</div>
+          <div className="text-slate-500">{hoverSubzone.area}</div>
+          <div className="text-slate-600 mt-0.5">
+            {hoverSubzone.avgPsf != null
+              ? <>${hoverSubzone.avgPsf.toLocaleString()} PSF · {hoverSubzone.count} txn</>
+              : <span className="text-slate-400">no data</span>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function PSFLegend() {
+function PSFLegend({ mode }: { mode: LayerMode }) {
   return (
     <div className="absolute bottom-8 left-3 rounded bg-white/90 px-3 py-2 text-xs shadow">
-      <div className="mb-1 font-medium text-slate-600">PSF (S$/sqft)</div>
+      <div className="mb-1 font-medium text-slate-600">
+        {mode === 'subzones' ? 'Subzone avg PSF (URA, 24mo)' : 'PSF (S$/sqft)'}
+      </div>
       {PSF_COLORS.slice(1).map(([psf, color]) => (
         <div key={psf} className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-full" style={{ background: color }} />
+          <span
+            className={`inline-block h-3 w-3 ${mode === 'subzones' ? 'rounded-sm' : 'rounded-full'}`}
+            style={{ background: color }}
+          />
           <span className="text-slate-500">{psf.toLocaleString()}+</span>
         </div>
       ))}

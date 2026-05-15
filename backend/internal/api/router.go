@@ -32,6 +32,7 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 		r.Get("/projects/{id}/transactions", s.handleProjectTransactions)
 		r.Get("/projects/{id}/comparison", s.handleProjectComparison)
 		r.Get("/tracked", s.handleTracked)
+		r.Get("/subzones/stats", s.handleSubzoneStats)
 	})
 	return r
 }

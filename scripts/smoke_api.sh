@@ -49,6 +49,7 @@ else
 fi
 
 run check "tracked endpoint returns array"           "curl -fs $BASE/api/tracked | jq -r 'type'"  'array'
+run check "subzones/stats returns FeatureCollection" "curl -fs $BASE/api/subzones/stats | jq -r '.type'" 'FeatureCollection'
 
 if [[ $FAILS -gt 0 ]]; then
     red "$FAILS check(s) failed"

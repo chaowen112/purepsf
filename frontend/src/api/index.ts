@@ -54,3 +54,32 @@ export function fetchTransactions(projectId: number) {
 export function fetchComparison(projectId: number) {
   return get<Comparison>(`/api/projects/${projectId}/comparison`)
 }
+
+export type SubzoneProperties = {
+  id: number
+  subzone_name: string
+  planning_area: string
+  region: string
+  avg_psf: number | null
+  count: number
+}
+
+import type { Geometry } from 'geojson'
+
+export type SubzoneFC = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    geometry: Geometry
+    properties: SubzoneProperties
+  }>
+}
+
+export function fetchSubzoneStats(params: { from?: string; to?: string; source?: 'URA' | 'HDB' } = {}) {
+  const q = new URLSearchParams()
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.source) q.set('source', params.source)
+  const qs = q.toString()
+  return get<SubzoneFC>(`/api/subzones/stats${qs ? '?' + qs : ''}`)
+}
