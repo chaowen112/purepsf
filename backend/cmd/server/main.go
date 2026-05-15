@@ -40,21 +40,6 @@ func main() {
 		port = "8080"
 	}
 
-	// Debug server: /metrics + /debug/pprof. Bind to loopback by default so
-	// pprof and pool internals aren't exposed publicly. Override with
-	// BACKEND_DEBUG_ADDR=0.0.0.0:9090 when running behind a trusted network.
-	debugAddr := os.Getenv("BACKEND_DEBUG_ADDR")
-	if debugAddr == "" {
-		debugAddr = "127.0.0.1:9090"
-	}
-	debugCtx, debugCancel := context.WithCancel(context.Background())
-	defer debugCancel()
-	go func() {
-		if err := metrics.Serve(debugCtx, debugAddr, logger); err != nil {
-			logger.Error("debug server error", "err", err)
-		}
-	}()
-
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           api.NewRouter(pool, logger),

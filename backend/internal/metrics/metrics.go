@@ -2,14 +2,14 @@
 // that records per-route request counts + latency, and a collector that
 // exposes pgxpool stats.
 //
-// The /metrics endpoint and /debug/pprof handlers are mounted on a separate
-// debug HTTP server (see Serve). That listener should be bound to a
-// loopback or trusted interface — never expose pprof to the open internet.
+// /metrics and /debug/pprof are mounted on the main HTTP server (see
+// Handler / PprofHandler). They aren't proxied by our production nginx
+// (which only forwards /api and /healthz), so they're effectively
+// private — but never expose this backend port directly to the open
+// internet without gating pprof first.
 package metrics
 
 import (
-	"context"
-	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"strconv"
@@ -99,45 +99,27 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
-// Serve starts the debug HTTP server (Prometheus + pprof). It blocks until
-// ctx is cancelled. addr should bind to loopback in production
-// (e.g. "127.0.0.1:9090") since pprof exposes runtime introspection.
-func Serve(ctx context.Context, addr string, logger *slog.Logger) error {
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{
+// Handler returns the Prometheus /metrics handler bound to our private
+// registry (so it doesn't leak unrelated globals from the default registry).
+func Handler() http.Handler {
+	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{
 		Registry:          reg,
 		EnableOpenMetrics: true,
-	}))
-	// net/http/pprof's init() registers on the default mux. Re-register
-	// explicitly on ours so we don't leak handlers via DefaultServeMux.
+	})
+}
+
+// PprofHandler returns a handler that serves the standard net/http/pprof
+// endpoints under any mount prefix (e.g. /debug/pprof). We register them
+// onto a private ServeMux instead of using net/http/pprof's default mux
+// init() to keep our handlers isolated.
+func PprofHandler() http.Handler {
+	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		logger.Info("debug server listening", "addr", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
-	}
+	return mux
 }
 
 // --- pgxpool collector ---

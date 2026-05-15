@@ -22,20 +22,31 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 	s := &Server{pool: pool, logger: logger}
 
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(20 * time.Second))
-	r.Use(corsMiddleware)
-	r.Use(metrics.Middleware)
 
-	r.Get("/healthz", s.handleHealth)
-	r.Route("/api", func(r chi.Router) {
-		r.Get("/projects", s.handleListProjects)
-		r.Get("/projects/{id}/transactions", s.handleProjectTransactions)
-		r.Get("/projects/{id}/comparison", s.handleProjectComparison)
-		r.Get("/tracked", s.handleTracked)
-		r.Get("/subzones/stats", s.handleSubzoneStats)
+	// Observability: nginx in production only proxies /api and /healthz, so
+	// these stay private. They sit outside the metrics.Middleware group so
+	// Prometheus scrapes and pprof traces don't pollute our latency
+	// histograms or request counts.
+	r.Method(http.MethodGet, "/metrics", metrics.Handler())
+	r.Mount("/debug", metrics.PprofHandler())
+
+	// App routes: full middleware stack.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequestID)
+		r.Use(middleware.RealIP)
+		r.Use(middleware.Timeout(20 * time.Second))
+		r.Use(corsMiddleware)
+		r.Use(metrics.Middleware)
+
+		r.Get("/healthz", s.handleHealth)
+		r.Route("/api", func(r chi.Router) {
+			r.Get("/projects", s.handleListProjects)
+			r.Get("/projects/{id}/transactions", s.handleProjectTransactions)
+			r.Get("/projects/{id}/comparison", s.handleProjectComparison)
+			r.Get("/tracked", s.handleTracked)
+			r.Get("/subzones/stats", s.handleSubzoneStats)
+		})
 	})
 	return r
 }
