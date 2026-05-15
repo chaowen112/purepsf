@@ -10,20 +10,34 @@ import (
 )
 
 type projectSummary struct {
-	ID               int64    `json:"id"`
-	Source           string   `json:"source"`
-	Name             string   `json:"name"`
-	Street           *string  `json:"street,omitempty"`
-	PostalCode       *string  `json:"postal_code,omitempty"`
-	District         *string  `json:"district,omitempty"`
-	MarketSegment    *string  `json:"market_segment,omitempty"`
-	PropertyType     *string  `json:"property_type,omitempty"`
-	Lat              *float64 `json:"lat,omitempty"`
-	Lng              *float64 `json:"lng,omitempty"`
-	TransactionCount int64    `json:"transaction_count"`
-	AvgPSF           *float64 `json:"avg_psf,omitempty"`
-	LatestDate       *string  `json:"latest_transaction,omitempty"`
+	ID                  int64    `json:"id"`
+	Source              string   `json:"source"`
+	Name                string   `json:"name"`
+	Street              *string  `json:"street,omitempty"`
+	PostalCode          *string  `json:"postal_code,omitempty"`
+	District            *string  `json:"district,omitempty"`
+	MarketSegment       *string  `json:"market_segment,omitempty"`
+	PropertyType        *string  `json:"property_type,omitempty"`
+	Lat                 *float64 `json:"lat,omitempty"`
+	Lng                 *float64 `json:"lng,omitempty"`
+	TransactionCount    int64    `json:"transaction_count"`
+	AvgPSF              *float64 `json:"avg_psf,omitempty"`
+	LatestDate          *string  `json:"latest_transaction,omitempty"`
+	TenureType          *string  `json:"tenure_type,omitempty"`
+	LeaseCommenceYear   *int32   `json:"lease_commence_year,omitempty"`
+	RemainingLeaseYears *int32   `json:"remaining_lease_years,omitempty"`
 }
+
+// projectFields is the column list (without GROUP BY/aggregates) used by
+// list, get-by-id, and subzone queries that return projectSummary shapes.
+const remainingLeaseSQL = `
+    CASE
+        WHEN p.tenure_type = '99-year'  AND p.lease_commence_year IS NOT NULL
+            THEN GREATEST(0, 99  - (EXTRACT(year FROM CURRENT_DATE)::int - p.lease_commence_year))::int
+        WHEN p.tenure_type = '999-year' AND p.lease_commence_year IS NOT NULL
+            THEN GREATEST(0, 999 - (EXTRACT(year FROM CURRENT_DATE)::int - p.lease_commence_year))::int
+        ELSE NULL
+    END`
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	bbox := r.URL.Query().Get("bbox")
@@ -47,12 +61,14 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	lng1, lat1, lng2, lat2 := coords[0], coords[1], coords[2], coords[3]
 
-	const q = `
+	q := `
 		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
 		       p.property_type, p.lat, p.lng,
 		       COUNT(t.id)                                    AS transaction_count,
 		       ROUND(AVG(t.psf)::numeric, 0)::float8          AS avg_psf,
-		       MAX(t.contract_date)::text                     AS latest_transaction
+		       MAX(t.contract_date)::text                     AS latest_transaction,
+		       p.tenure_type, p.lease_commence_year,
+		       ` + remainingLeaseSQL + ` AS remaining_lease_years
 		FROM projects p
 		LEFT JOIN transactions t ON t.project_id = p.id
 		WHERE p.geom IS NOT NULL
@@ -76,6 +92,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 			&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
 			&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 			&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
+			&p.TenureType, &p.LeaseCommenceYear, &p.RemainingLeaseYears,
 		); err != nil {
 			s.logger.Error("handleListProjects scan", "err", err)
 			writeError(w, http.StatusInternalServerError, "scan error")
@@ -98,12 +115,14 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	const q = `
+	q := `
 		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
 		       p.property_type, p.lat, p.lng,
 		       COUNT(t.id)                            AS transaction_count,
 		       ROUND(AVG(t.psf)::numeric, 0)::float8  AS avg_psf,
-		       MAX(t.contract_date)::text             AS latest_transaction
+		       MAX(t.contract_date)::text             AS latest_transaction,
+		       p.tenure_type, p.lease_commence_year,
+		       ` + remainingLeaseSQL + ` AS remaining_lease_years
 		FROM projects p
 		LEFT JOIN transactions t ON t.project_id = p.id
 		WHERE p.id = $1
@@ -113,6 +132,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
 		&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 		&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
+		&p.TenureType, &p.LeaseCommenceYear, &p.RemainingLeaseYears,
 	); err != nil {
 		writeError(w, http.StatusNotFound, "project not found")
 		return

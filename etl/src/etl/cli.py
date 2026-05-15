@@ -56,6 +56,14 @@ def cmd_geocode_missing() -> None:
     run()
 
 
+@main.command("refresh-tenure")
+def cmd_refresh_tenure() -> None:
+    """Re-derive projects.tenure_type + lease_commence_year from transactions."""
+    from etl.tenure import run
+
+    run()
+
+
 @main.command("backfill-postal")
 def cmd_backfill_postal() -> None:
     """Populate projects.postal_code from cached OneMap responses (no network calls)."""

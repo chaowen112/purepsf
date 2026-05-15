@@ -12,6 +12,9 @@ export type ProjectSummary = {
   transaction_count: number
   avg_psf?: number
   latest_transaction?: string
+  tenure_type?: 'Freehold' | '99-year' | '999-year' | 'Other'
+  lease_commence_year?: number
+  remaining_lease_years?: number
 }
 
 export type Transaction = {

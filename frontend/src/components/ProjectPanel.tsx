@@ -91,6 +91,7 @@ export default function ProjectPanel({ project, onClose }: Props) {
               </span>
             ))}
           </div>
+          <TenureLine project={project} />
         </div>
         <button
           onClick={onClose}
@@ -203,6 +204,32 @@ export default function ProjectPanel({ project, onClose }: Props) {
       </div>
     </div>
   )
+}
+
+function TenureLine({ project }: { project: ProjectSummary }) {
+  if (!project.tenure_type) return null
+  const tt = project.tenure_type
+  const yr = project.lease_commence_year
+  const rem = project.remaining_lease_years
+  let body: React.ReactNode
+  if (tt === 'Freehold') {
+    body = <span className="font-medium text-emerald-700">Freehold</span>
+  } else if (tt === '99-year' || tt === '999-year') {
+    body = (
+      <>
+        <span className="font-medium">{tt}</span>
+        {yr && <span> · from {yr}</span>}
+        {rem != null && (
+          <span className={rem < 60 ? 'text-amber-700' : 'text-slate-500'}>
+            {' · '}{rem} yrs left
+          </span>
+        )}
+      </>
+    )
+  } else {
+    body = <span>{tt}{yr && ` · from ${yr}`}</span>
+  }
+  return <p className="text-xs text-slate-500 mt-1">{body}</p>
 }
 
 function Stat({ label, value, sub, accent }: {
