@@ -14,6 +14,7 @@ type projectSummary struct {
 	Source           string   `json:"source"`
 	Name             string   `json:"name"`
 	Street           *string  `json:"street,omitempty"`
+	PostalCode       *string  `json:"postal_code,omitempty"`
 	District         *string  `json:"district,omitempty"`
 	MarketSegment    *string  `json:"market_segment,omitempty"`
 	PropertyType     *string  `json:"property_type,omitempty"`
@@ -47,7 +48,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	lng1, lat1, lng2, lat2 := coords[0], coords[1], coords[2], coords[3]
 
 	const q = `
-		SELECT p.id, p.source::text, p.name, p.street, p.district, p.market_segment,
+		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
 		       p.property_type, p.lat, p.lng,
 		       COUNT(t.id)                                    AS transaction_count,
 		       ROUND(AVG(t.psf)::numeric, 0)::float8          AS avg_psf,
@@ -72,7 +73,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p projectSummary
 		if err := rows.Scan(
-			&p.ID, &p.Source, &p.Name, &p.Street, &p.District,
+			&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
 			&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 			&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
 		); err != nil {

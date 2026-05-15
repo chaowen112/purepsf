@@ -48,5 +48,13 @@ def cmd_geocode_missing() -> None:
     run()
 
 
+@main.command("backfill-postal")
+def cmd_backfill_postal() -> None:
+    """Populate projects.postal_code from cached OneMap responses (no network calls)."""
+    from etl.geocode import backfill_postal_codes
+
+    backfill_postal_codes()
+
+
 if __name__ == "__main__":
     main()

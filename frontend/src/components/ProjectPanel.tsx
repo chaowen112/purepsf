@@ -39,8 +39,9 @@ export default function ProjectPanel({ project, onClose }: Props) {
     }).finally(() => setLoading(false))
   }, [project.id])
 
-  const addrBits = [
-    project.street,
+  const addrLine = [project.street, project.postal_code ? `S(${project.postal_code})` : null]
+    .filter(Boolean).join(' · ')
+  const tagBits = [
     project.district ? `D${project.district}` : null,
     project.market_segment,
   ].filter(Boolean)
@@ -64,10 +65,10 @@ export default function ProjectPanel({ project, onClose }: Props) {
       <div className="flex items-start justify-between border-b px-4 py-3">
         <div className="min-w-0">
           <h2 className="font-semibold text-slate-800 leading-tight truncate">{project.name}</h2>
-          {addrBits.length > 0 && (
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{addrBits.join(' · ')}</p>
+          {addrLine && (
+            <p className="text-xs text-slate-500 mt-0.5 truncate">{addrLine}</p>
           )}
-          <div className="flex gap-1.5 mt-1">
+          <div className="flex gap-1.5 mt-1 flex-wrap">
             <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
               project.source === 'URA' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
             }`}>
@@ -78,6 +79,11 @@ export default function ProjectPanel({ project, onClose }: Props) {
                 {project.property_type}
               </span>
             )}
+            {tagBits.map((t) => (
+              <span key={t!} className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                {t}
+              </span>
+            ))}
           </div>
         </div>
         <button

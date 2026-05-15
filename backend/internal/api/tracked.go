@@ -7,6 +7,7 @@ type trackedProject struct {
 	Source           string   `json:"source"`
 	Name             string   `json:"name"`
 	Street           *string  `json:"street,omitempty"`
+	PostalCode       *string  `json:"postal_code,omitempty"`
 	District         *string  `json:"district,omitempty"`
 	MarketSegment    *string  `json:"market_segment,omitempty"`
 	PropertyType     *string  `json:"property_type,omitempty"`
@@ -20,7 +21,7 @@ type trackedProject struct {
 
 func (s *Server) handleTracked(w http.ResponseWriter, r *http.Request) {
 	const q = `
-		SELECT p.id, p.source::text, p.name, p.street, p.district, p.market_segment,
+		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
 		       p.property_type, p.lat, p.lng,
 		       tp.notes,
 		       COUNT(t.id)                           AS transaction_count,
@@ -44,7 +45,7 @@ func (s *Server) handleTracked(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p trackedProject
 		if err := rows.Scan(
-			&p.ID, &p.Source, &p.Name, &p.Street, &p.District,
+			&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
 			&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 			&p.Notes,
 			&p.TransactionCount, &p.AvgPSF, &p.LatestDate,

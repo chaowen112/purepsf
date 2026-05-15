@@ -3,6 +3,7 @@ export type ProjectSummary = {
   source: 'URA' | 'HDB'
   name: string
   street?: string
+  postal_code?: string
   district?: string
   market_segment?: string
   property_type?: string

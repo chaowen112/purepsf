@@ -42,7 +42,8 @@ make etl-install           # python venv + install ETL package
 cd etl && source ../.env && \
     .venv/bin/purepsf-etl ura-transactions && \
     .venv/bin/purepsf-etl hdb-resale && \
-    .venv/bin/purepsf-etl geocode-hdb
+    .venv/bin/purepsf-etl geocode-missing && \
+    .venv/bin/purepsf-etl backfill-postal     # offline: reads cached OneMap responses
 make verify-db             # data sanity checks
 make backend-run &         # Go API on :8080
 make smoke-api             # API smoke tests
