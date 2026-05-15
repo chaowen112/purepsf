@@ -75,11 +75,10 @@ export type SubzoneFC = {
   }>
 }
 
-export function fetchSubzoneStats(params: { from?: string; to?: string; source?: 'URA' | 'HDB' } = {}) {
+export function fetchSubzoneStats(params: { from?: string; to?: string } = {}) {
   const q = new URLSearchParams()
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
-  if (params.source) q.set('source', params.source)
   const qs = q.toString()
   return get<SubzoneFC>(`/api/subzones/stats${qs ? '?' + qs : ''}`)
 }

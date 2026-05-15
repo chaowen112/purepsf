@@ -3,29 +3,21 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 )
 
 // handleSubzoneStats returns a GeoJSON FeatureCollection of all planning
-// subzones with aggregated PSF stats from the transactions table. Designed
-// for MapLibre to consume directly as a fill layer.
+// subzones with aggregated PSF stats (both URA and HDB) from the
+// transactions table. Designed for MapLibre to consume directly as a
+// fill layer.
 //
-// Query params:
+// Query params (optional):
 //
-//	from=YYYY-MM-DD   (optional, default: 24 months ago)
-//	to=YYYY-MM-DD     (optional, default: today)
-//	source=URA|HDB    (optional, filter txns to one source)
+//	from=YYYY-MM-DD
+//	to=YYYY-MM-DD
 func (s *Server) handleSubzoneStats(w http.ResponseWriter, r *http.Request) {
 	from := nullStr(r.URL.Query().Get("from"))
 	to := nullStr(r.URL.Query().Get("to"))
-	source := strings.ToUpper(r.URL.Query().Get("source"))
-	if source != "URA" && source != "HDB" {
-		source = "" // both
-	}
-	srcParam := nullStr(source)
 
-	// Aggregate per subzone — projects+txns join, then ST_Contains polygon match.
-	// Subzones with zero transactions still appear (count=0, avg_psf=null).
 	const q = `
 		WITH agg AS (
 			SELECT z.id,
@@ -37,11 +29,9 @@ func (s *Server) handleSubzoneStats(w http.ResponseWriter, r *http.Request) {
 			      AND ST_Contains(z.geom, p.geom)
 			LEFT JOIN transactions t
 			       ON t.project_id = p.id
-			      AND ($2::date IS NULL OR t.contract_date >= $2::date)
-			      AND ($3::date IS NULL OR t.contract_date <= $3::date)
-			      AND ($4::text IS NULL OR t.source::text = $4)
+			      AND ($1::date IS NULL OR t.contract_date >= $1::date)
+			      AND ($2::date IS NULL OR t.contract_date <= $2::date)
 			      AND t.psf IS NOT NULL
-			WHERE $1::boolean
 			GROUP BY z.id
 		)
 		SELECT z.id, z.subzone_name, z.planning_area, z.region,
@@ -51,7 +41,7 @@ func (s *Server) handleSubzoneStats(w http.ResponseWriter, r *http.Request) {
 		JOIN agg ON agg.id = z.id
 		ORDER BY z.id`
 
-	rows, err := s.pool.Query(r.Context(), q, true, from, to, srcParam)
+	rows, err := s.pool.Query(r.Context(), q, from, to)
 	if err != nil {
 		s.logger.Error("handleSubzoneStats", "err", err)
 		writeError(w, http.StatusInternalServerError, "query error")

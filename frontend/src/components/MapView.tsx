@@ -34,6 +34,12 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
   const mapRef = useRef<maplibregl.Map | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const subzonesLoadedRef = useRef(false)
+  // Map handlers are registered once at mount inside map.on('load'); use refs
+  // so they always read the latest props instead of the stale initial closure.
+  const onSelectRef = useRef(onSelect)
+  const onBoundsRef = useRef(onBoundsChange)
+  useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
+  useEffect(() => { onBoundsRef.current = onBoundsChange }, [onBoundsChange])
   const [hoverSubzone, setHoverSubzone] = useState<{
     name: string; area: string; avgPsf: number | null; count: number; x: number; y: number
   } | null>(null)
@@ -130,7 +136,7 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
 
       map.on('click', 'projects-circle', (e) => {
         const feat = e.features?.[0]
-        if (feat?.properties?.id) onSelect(feat.properties.id as number)
+        if (feat?.properties?.id) onSelectRef.current(feat.properties.id as number)
       })
 
       map.on('mouseenter', 'projects-circle', () => {
@@ -157,14 +163,14 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
 
       // Emit initial bounds
       const b = map.getBounds()
-      onBoundsChange([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
+      onBoundsRef.current([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
     })
 
     map.on('moveend', () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
         const b = map.getBounds()
-        onBoundsChange([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
+        onBoundsRef.current([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
       }, 400)
     })
 
@@ -211,7 +217,7 @@ export default function MapView({ projects, selectedId, onSelect, onBoundsChange
 
     if (showSubzones && !subzonesLoadedRef.current) {
       subzonesLoadedRef.current = true
-      fetchSubzoneStats({ source: 'URA' })
+      fetchSubzoneStats()
         .then((fc: SubzoneFC) => {
           const src = map.getSource('subzones') as maplibregl.GeoJSONSource | undefined
           src?.setData(fc as unknown as GeoJSON.FeatureCollection)
@@ -249,7 +255,7 @@ function PSFLegend({ mode }: { mode: LayerMode }) {
   return (
     <div className="absolute bottom-8 left-3 rounded bg-white/90 px-3 py-2 text-xs shadow">
       <div className="mb-1 font-medium text-slate-600">
-        {mode === 'subzones' ? 'Subzone avg PSF (URA, 24mo)' : 'PSF (S$/sqft)'}
+        {mode === 'subzones' ? 'Subzone avg PSF (all)' : 'PSF (S$/sqft)'}
       </div>
       {PSF_COLORS.slice(1).map(([psf, color]) => (
         <div key={psf} className="flex items-center gap-1.5">
