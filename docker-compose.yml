@@ -1,3 +1,12 @@
+# purePSF — single-host production stack.
+#
+#   docker compose up -d                  # postgres + backend + frontend
+#   docker compose --profile etl run --rm etl ura-transactions
+#   docker compose --profile etl run --rm etl planning-subzones --file /data/mp19_subzones.geojson
+#
+# Only the frontend publishes a host port. Postgres is bound to localhost
+# (still useful for native ETL/psql). Backend is internal-only.
+
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -6,32 +15,77 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-purepsf}
       POSTGRES_USER: ${POSTGRES_USER:-purepsf}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bind to loopback only so the DB isn't reachable from the public iface.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+      # Init script runs schema.sql + every migration in order on first start.
+      - ./infra/init-db.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
+      - ./infra:/sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-purepsf} -d ${POSTGRES_DB:-purepsf}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks: [internal]
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: purepsf-backend:latest
     container_name: purepsf-backend
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-purepsf}:${POSTGRES_PASSWORD:-change_me_locally}@postgres:5432/${POSTGRES_DB:-purepsf}?sslmode=disable
-      BACKEND_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-purepsf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-purepsf}?sslmode=disable
+      BACKEND_PORT: "8080"
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
+    # No published port — frontend (nginx) reverse-proxies via the internal network.
+    expose: ["8080"]
+    networks: [internal]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: purepsf-frontend:latest
+    container_name: purepsf-frontend
+    restart: unless-stopped
+    depends_on: [backend]
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${FRONTEND_PORT:-80}:80"
+    networks: [internal]
+
+  # On-demand ETL runner. Usage:
+  #   docker compose --profile etl run --rm etl ura-transactions
+  etl:
+    build:
+      context: ./etl
+      dockerfile: Dockerfile
+    image: purepsf-etl:latest
+    profiles: [etl]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-purepsf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-purepsf}?sslmode=disable
+      URA_ACCESS_KEY: ${URA_ACCESS_KEY:-}
+      ONEMAP_EMAIL: ${ONEMAP_EMAIL:-}
+      ONEMAP_PASSWORD: ${ONEMAP_PASSWORD:-}
+    volumes:
+      - ./data:/data:ro
+      - etl-cache:/home/etl/.cache
+    networks: [internal]
 
 volumes:
   pgdata:
+  etl-cache:
+
+networks:
+  internal:
+    driver: bridge

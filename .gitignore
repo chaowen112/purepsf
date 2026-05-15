@@ -37,6 +37,9 @@ data/ura_developer_sales/*.xlsx
 data/ura_developer_sales/*.xls
 data/ura_developer_sales/*.pdf
 !data/ura_developer_sales/.gitkeep
+data/*.geojson
+data/*.zip
+data/*.csv
 
 # DB volumes (when running native postgres)
 infra/pgdata/

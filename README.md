@@ -52,6 +52,32 @@ make smoke-api             # API smoke tests
 make frontend-dev          # Vite dev server on :5173
 ```
 
+## Production deploy (single host)
+
+```bash
+cp .env.example .env       # set POSTGRES_PASSWORD, URA_ACCESS_KEY, ONEMAP_* etc.
+docker compose up -d       # postgres + backend + nginx (only :80 exposed)
+# First time: load polygons, then run ETLs inside the `etl` profile.
+docker compose --profile etl run --rm etl ura-transactions
+docker compose --profile etl run --rm etl hdb-resale
+docker compose --profile etl run --rm etl geocode-missing
+docker compose --profile etl run --rm etl backfill-postal
+docker compose --profile etl run --rm etl planning-subzones --file /data/mp19_subzones.geojson
+```
+
+Topology:
+
+```
+ host  ─── :80 ───►  nginx (frontend)
+                      ├── /assets/*  → static
+                      └── /api/* /healthz → backend:8080  (internal-only network)
+                                            └── postgres:5432  (internal-only)
+```
+
+Only the frontend publishes a port. Postgres is reachable on `127.0.0.1:5432`
+of the host for ad-hoc psql/ETL from outside the container. The `etl` service
+is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>`.
+
 ## Endpoints
 
 | Method | Path | Description |
