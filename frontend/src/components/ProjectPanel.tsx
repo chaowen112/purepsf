@@ -106,6 +106,9 @@ export default function ProjectPanel({ project, onClose }: Props) {
         {/* Tenure / lease block */}
         <TenureBlock project={project} />
 
+        {/* Official HDB block metadata */}
+        <HDBMetadataBlock project={project} />
+
         {/* Comparison stats */}
         {comp && (
           <div className="grid grid-cols-3 gap-2 text-center">
@@ -263,6 +266,48 @@ function TenureBlock({ project }: { project: ProjectSummary }) {
           URA records land-lease commencement; building TOP can be 3–8 years later.
         </p>
       )}
+    </div>
+  )
+}
+
+function HDBMetadataBlock({ project }: { project: ProjectSummary }) {
+  if (project.source !== 'HDB' || project.hdb_total_dwelling_units == null) return null
+
+  const sold = project.hdb_sold_units ?? 0
+  const rental = project.hdb_rental_units ?? 0
+  const total = project.hdb_total_dwelling_units
+  const unknown = Math.max(0, total - sold - rental)
+  const mix = [
+    sold > 0 ? `${sold.toLocaleString()} sold flats` : null,
+    rental > 0 ? `${rental.toLocaleString()} public rental flats` : null,
+    unknown > 0 ? `${unknown.toLocaleString()} other` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <div className="rounded-md border border-slate-200 px-3 py-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">HDB block metadata</div>
+        {rental > 0 && (
+          <div className="text-sm font-semibold text-slate-800">
+            Public rental
+          </div>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        <div>
+          <div className="text-slate-400">Completed</div>
+          <div className="text-slate-700 tabular-nums">{project.hdb_year_completed ?? '—'}</div>
+        </div>
+        <div>
+          <div className="text-slate-400">Floors</div>
+          <div className="text-slate-700 tabular-nums">{project.hdb_max_floor_lvl ?? '—'}</div>
+        </div>
+        <div>
+          <div className="text-slate-400">Units</div>
+          <div className="text-slate-700 tabular-nums">{total.toLocaleString()}</div>
+        </div>
+      </div>
+      {mix && <p className="mt-1 text-xs text-slate-500">{mix}</p>}
     </div>
   )
 }

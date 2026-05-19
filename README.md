@@ -41,6 +41,7 @@ make up                    # postgres (docker) + apply schema
 make etl-install           # python venv + install ETL package
 cd etl && source ../.env && \
     .venv/bin/purepsf-etl ura-transactions && \
+    .venv/bin/purepsf-etl hdb-property-info && \
     .venv/bin/purepsf-etl hdb-resale && \
     .venv/bin/purepsf-etl geocode-missing && \
     .venv/bin/purepsf-etl backfill-postal && \
@@ -59,6 +60,7 @@ cp .env.example .env       # set POSTGRES_PASSWORD, URA_ACCESS_KEY, ONEMAP_* etc
 docker compose up -d       # postgres + backend + nginx (only :80 exposed)
 # First time: load polygons, then run ETLs inside the `etl` profile.
 docker compose --profile etl run --rm etl ura-transactions
+docker compose --profile etl run --rm etl hdb-property-info
 docker compose --profile etl run --rm etl hdb-resale
 docker compose --profile etl run --rm etl geocode-missing
 docker compose --profile etl run --rm etl backfill-postal
@@ -94,6 +96,7 @@ is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>
 | Source | Coverage | Update cadence |
 |---|---|---|
 | URA Data Service `PMI_Resi_Transaction` | Private sales, past 5 years, with SVY21 coords | Tue/Fri |
+| data.gov.sg `d_17f5382f26140b1fdae0ba2ef6239d2f` | HDB block metadata: completion year, floor count, dwelling/rental unit mix | Periodic |
 | data.gov.sg `d_8b84c4ee58e3cfc0ece0d773c8ca6abc` | HDB resale, block + street | Monthly |
 | OneMap `/api/common/elastic/search` | HDB block → lat/lng/postcode | On demand (15k/hr) |
 | data.gov.sg "Master Plan 2019 Subzone Boundary (No Sea)" | ~330 planning subzone polygons | One-off (manual GeoJSON download to `data/mp19_subzones.geojson`) |

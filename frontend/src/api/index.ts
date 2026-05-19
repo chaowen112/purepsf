@@ -15,6 +15,12 @@ export type ProjectSummary = {
   tenure_type?: 'Freehold' | '99-year' | '999-year' | 'Other'
   lease_commence_year?: number
   remaining_lease_years?: number
+  hdb_year_completed?: number
+  hdb_max_floor_lvl?: number
+  hdb_total_dwelling_units?: number
+  hdb_sold_units?: number
+  hdb_rental_units?: number
+  hdb_rental_pct?: number
 }
 
 export type Transaction = {

@@ -34,9 +34,18 @@ def cmd_hdb_resale(limit: int | None, resource_id: str | None) -> None:
 
         purepsf-etl hdb-resale --resource d_ebc5ab87086db484f88045b47411ebc5
     """
-    from etl.hdb_resale import run, _DEFAULT_RESOURCE
+    from etl.hdb_resale import _DEFAULT_RESOURCE, run
 
     run(limit=limit, resource_id=resource_id or _DEFAULT_RESOURCE)
+
+
+@main.command("hdb-property-info")
+@click.option("--limit", default=None, type=int, help="Max rows (default: all)")
+def cmd_hdb_property_info(limit: int | None) -> None:
+    """Ingest official HDB block-level metadata from data.gov.sg."""
+    from etl.hdb_property_info import run
+
+    run(limit=limit)
 
 
 @main.command("developer-sales")

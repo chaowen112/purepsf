@@ -26,6 +26,12 @@ type projectSummary struct {
 	TenureType          *string  `json:"tenure_type,omitempty"`
 	LeaseCommenceYear   *int32   `json:"lease_commence_year,omitempty"`
 	RemainingLeaseYears *int32   `json:"remaining_lease_years,omitempty"`
+	HDBYearCompleted    *int32   `json:"hdb_year_completed,omitempty"`
+	HDBMaxFloorLevel    *int32   `json:"hdb_max_floor_lvl,omitempty"`
+	HDBTotalUnits       *int32   `json:"hdb_total_dwelling_units,omitempty"`
+	HDBSoldUnits        *int32   `json:"hdb_sold_units,omitempty"`
+	HDBRentalUnits      *int32   `json:"hdb_rental_units,omitempty"`
+	HDBRentalPct        *float64 `json:"hdb_rental_pct,omitempty"`
 }
 
 // projectFields is the column list (without GROUP BY/aggregates) used by
@@ -68,12 +74,40 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		       ROUND(AVG(t.psf)::numeric, 0)::float8          AS avg_psf,
 		       MAX(t.contract_date)::text                     AS latest_transaction,
 		       p.tenure_type, p.lease_commence_year,
-		       ` + remainingLeaseSQL + ` AS remaining_lease_years
+		       ` + remainingLeaseSQL + ` AS remaining_lease_years,
+		       hpi.year_completed,
+		       hpi.max_floor_lvl,
+		       hpi.total_dwelling_units,
+		       (
+		           hpi.one_room_sold + hpi.two_room_sold + hpi.three_room_sold +
+		           hpi.four_room_sold + hpi.five_room_sold + hpi.exec_sold +
+		           hpi.multigen_sold + hpi.studio_apartment_sold
+		       ) AS hdb_sold_units,
+		       (
+		           hpi.one_room_rental + hpi.two_room_rental + hpi.three_room_rental +
+		           hpi.other_room_rental
+		       ) AS hdb_rental_units,
+		       CASE
+		           WHEN hpi.total_dwelling_units > 0 THEN ROUND((
+		               (
+		                   hpi.one_room_rental + hpi.two_room_rental +
+		                   hpi.three_room_rental + hpi.other_room_rental
+		               )::numeric / hpi.total_dwelling_units::numeric * 100
+		           ), 1)::float8
+		           ELSE NULL
+		       END AS hdb_rental_pct
 		FROM projects p
 		LEFT JOIN transactions t ON t.project_id = p.id
+		LEFT JOIN hdb_property_info hpi ON p.source = 'HDB' AND hpi.project_key = p.project_key
 		WHERE p.geom IS NOT NULL
 		  AND p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
-		GROUP BY p.id
+		GROUP BY p.id,
+		         hpi.year_completed, hpi.max_floor_lvl, hpi.total_dwelling_units,
+		         hpi.one_room_sold, hpi.two_room_sold, hpi.three_room_sold,
+		         hpi.four_room_sold, hpi.five_room_sold, hpi.exec_sold,
+		         hpi.multigen_sold, hpi.studio_apartment_sold,
+		         hpi.one_room_rental, hpi.two_room_rental, hpi.three_room_rental,
+		         hpi.other_room_rental
 		ORDER BY transaction_count DESC
 		LIMIT 500`
 
@@ -93,6 +127,8 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 			&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 			&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
 			&p.TenureType, &p.LeaseCommenceYear, &p.RemainingLeaseYears,
+			&p.HDBYearCompleted, &p.HDBMaxFloorLevel, &p.HDBTotalUnits,
+			&p.HDBSoldUnits, &p.HDBRentalUnits, &p.HDBRentalPct,
 		); err != nil {
 			s.logger.Error("handleListProjects scan", "err", err)
 			writeError(w, http.StatusInternalServerError, "scan error")
@@ -122,17 +158,47 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		       ROUND(AVG(t.psf)::numeric, 0)::float8  AS avg_psf,
 		       MAX(t.contract_date)::text             AS latest_transaction,
 		       p.tenure_type, p.lease_commence_year,
-		       ` + remainingLeaseSQL + ` AS remaining_lease_years
+		       ` + remainingLeaseSQL + ` AS remaining_lease_years,
+		       hpi.year_completed,
+		       hpi.max_floor_lvl,
+		       hpi.total_dwelling_units,
+		       (
+		           hpi.one_room_sold + hpi.two_room_sold + hpi.three_room_sold +
+		           hpi.four_room_sold + hpi.five_room_sold + hpi.exec_sold +
+		           hpi.multigen_sold + hpi.studio_apartment_sold
+		       ) AS hdb_sold_units,
+		       (
+		           hpi.one_room_rental + hpi.two_room_rental + hpi.three_room_rental +
+		           hpi.other_room_rental
+		       ) AS hdb_rental_units,
+		       CASE
+		           WHEN hpi.total_dwelling_units > 0 THEN ROUND((
+		               (
+		                   hpi.one_room_rental + hpi.two_room_rental +
+		                   hpi.three_room_rental + hpi.other_room_rental
+		               )::numeric / hpi.total_dwelling_units::numeric * 100
+		           ), 1)::float8
+		           ELSE NULL
+		       END AS hdb_rental_pct
 		FROM projects p
 		LEFT JOIN transactions t ON t.project_id = p.id
+		LEFT JOIN hdb_property_info hpi ON p.source = 'HDB' AND hpi.project_key = p.project_key
 		WHERE p.id = $1
-		GROUP BY p.id`
+		GROUP BY p.id,
+		         hpi.year_completed, hpi.max_floor_lvl, hpi.total_dwelling_units,
+		         hpi.one_room_sold, hpi.two_room_sold, hpi.three_room_sold,
+		         hpi.four_room_sold, hpi.five_room_sold, hpi.exec_sold,
+		         hpi.multigen_sold, hpi.studio_apartment_sold,
+		         hpi.one_room_rental, hpi.two_room_rental, hpi.three_room_rental,
+		         hpi.other_room_rental`
 	var p projectSummary
 	if err := s.pool.QueryRow(r.Context(), q, id).Scan(
 		&p.ID, &p.Source, &p.Name, &p.Street, &p.PostalCode, &p.District,
 		&p.MarketSegment, &p.PropertyType, &p.Lat, &p.Lng,
 		&p.TransactionCount, &p.AvgPSF, &p.LatestDate,
 		&p.TenureType, &p.LeaseCommenceYear, &p.RemainingLeaseYears,
+		&p.HDBYearCompleted, &p.HDBMaxFloorLevel, &p.HDBTotalUnits,
+		&p.HDBSoldUnits, &p.HDBRentalUnits, &p.HDBRentalPct,
 	); err != nil {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
