@@ -27,6 +27,21 @@ function fmtPrice(p: number) {
   return `$${p}`
 }
 
+function propertyGuruSearchUrl(project: ProjectSummary, kind: 'sale' | 'rent') {
+  const query = [project.name, project.street].filter(Boolean).join(' ')
+  const section = kind === 'sale' ? 'property-for-sale' : 'property-for-rent'
+  return `https://www.propertyguru.com.sg/${section}?freetext=${encodeURIComponent(query)}`
+}
+
+function propertyGuruLinks(project: ProjectSummary) {
+  const mapped = project.external_links?.find((link) => link.provider === 'propertyguru')
+  return {
+    sale: mapped?.url_sale ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'sale'),
+    rent: mapped?.url_rent ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'rent'),
+    mapped: Boolean(mapped?.url_sale || mapped?.url_rent || mapped?.url_project),
+  }
+}
+
 export default function ProjectPanel({ project, onClose }: Props) {
   const [txns, setTxns] = useState<Transaction[] | null>(null)
   const [comp, setComp] = useState<Comparison | null>(null)
@@ -108,6 +123,9 @@ export default function ProjectPanel({ project, onClose }: Props) {
 
         {/* Official HDB block metadata */}
         <HDBMetadataBlock project={project} />
+
+        {/* External listing portal link-outs */}
+        <PropertyGuruBlock project={project} />
 
         {/* Comparison stats */}
         {comp && (
@@ -206,6 +224,38 @@ export default function ProjectPanel({ project, onClose }: Props) {
             range · {comp.own.date_from.slice(0, 7)} – {comp.own.date_to.slice(0, 7)}
           </p>
         )}
+      </div>
+    </div>
+  )
+}
+
+function PropertyGuruBlock({ project }: { project: ProjectSummary }) {
+  const links = propertyGuruLinks(project)
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">Available listings</h3>
+        {links.mapped && (
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">Mapped</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <a
+          href={links.sale}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
+        >
+          PropertyGuru sale
+        </a>
+        <a
+          href={links.rent}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+        >
+          PropertyGuru rent
+        </a>
       </div>
     </div>
   )

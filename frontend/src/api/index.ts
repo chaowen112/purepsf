@@ -21,6 +21,16 @@ export type ProjectSummary = {
   hdb_sold_units?: number
   hdb_rental_units?: number
   hdb_rental_pct?: number
+  external_links?: ExternalProjectLink[]
+}
+
+export type ExternalProjectLink = {
+  provider: 'propertyguru' | string
+  url_sale?: string
+  url_rent?: string
+  url_project?: string
+  match_method?: string
+  confidence?: number
 }
 
 export type Transaction = {

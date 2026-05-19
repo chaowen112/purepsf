@@ -91,6 +91,37 @@ is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>
 | GET | `/api/tracked` | Tracked projects + latest stats |
 | GET | `/api/subzones/stats?from=&to=&source=` | GeoJSON FeatureCollection of MP19 subzones with avg PSF per polygon |
 
+## External listing links
+
+`external_project_links` stores manually curated outbound links to listing
+portals such as PropertyGuru. These links are used for "available listings"
+buttons only; third-party listing contents are not ingested or mirrored.
+
+Example:
+
+```sql
+INSERT INTO external_project_links
+  (project_id, provider, url_sale, url_rent, url_project, match_method, confidence)
+VALUES
+  (123, 'propertyguru',
+   'https://www.propertyguru.com.sg/property-for-sale/at-example-condo-123',
+   'https://www.propertyguru.com.sg/property-for-rent/at-example-condo-123',
+   'https://www.propertyguru.com.sg/project/example-condo-123',
+   'manual', 1.0)
+ON CONFLICT (project_id, provider) DO UPDATE
+SET url_sale = EXCLUDED.url_sale,
+    url_rent = EXCLUDED.url_rent,
+    url_project = EXCLUDED.url_project,
+    match_method = EXCLUDED.match_method,
+    confidence = EXCLUDED.confidence,
+    updated_at = now();
+```
+
+If no curated PropertyGuru URL exists, the frontend falls back to a PropertyGuru
+sale/rent search using the purePSF project name and street. A future browser
+extension should live in its own repository and be mounted here as a git
+submodule, for example under `integrations/propertyguru-extension/`.
+
 ## Data sources
 
 | Source | Coverage | Update cadence |

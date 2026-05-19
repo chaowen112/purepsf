@@ -10,28 +10,38 @@ import (
 )
 
 type projectSummary struct {
-	ID                  int64    `json:"id"`
-	Source              string   `json:"source"`
-	Name                string   `json:"name"`
-	Street              *string  `json:"street,omitempty"`
-	PostalCode          *string  `json:"postal_code,omitempty"`
-	District            *string  `json:"district,omitempty"`
-	MarketSegment       *string  `json:"market_segment,omitempty"`
-	PropertyType        *string  `json:"property_type,omitempty"`
-	Lat                 *float64 `json:"lat,omitempty"`
-	Lng                 *float64 `json:"lng,omitempty"`
-	TransactionCount    int64    `json:"transaction_count"`
-	AvgPSF              *float64 `json:"avg_psf,omitempty"`
-	LatestDate          *string  `json:"latest_transaction,omitempty"`
-	TenureType          *string  `json:"tenure_type,omitempty"`
-	LeaseCommenceYear   *int32   `json:"lease_commence_year,omitempty"`
-	RemainingLeaseYears *int32   `json:"remaining_lease_years,omitempty"`
-	HDBYearCompleted    *int32   `json:"hdb_year_completed,omitempty"`
-	HDBMaxFloorLevel    *int32   `json:"hdb_max_floor_lvl,omitempty"`
-	HDBTotalUnits       *int32   `json:"hdb_total_dwelling_units,omitempty"`
-	HDBSoldUnits        *int32   `json:"hdb_sold_units,omitempty"`
-	HDBRentalUnits      *int32   `json:"hdb_rental_units,omitempty"`
-	HDBRentalPct        *float64 `json:"hdb_rental_pct,omitempty"`
+	ID                  int64                 `json:"id"`
+	Source              string                `json:"source"`
+	Name                string                `json:"name"`
+	Street              *string               `json:"street,omitempty"`
+	PostalCode          *string               `json:"postal_code,omitempty"`
+	District            *string               `json:"district,omitempty"`
+	MarketSegment       *string               `json:"market_segment,omitempty"`
+	PropertyType        *string               `json:"property_type,omitempty"`
+	Lat                 *float64              `json:"lat,omitempty"`
+	Lng                 *float64              `json:"lng,omitempty"`
+	TransactionCount    int64                 `json:"transaction_count"`
+	AvgPSF              *float64              `json:"avg_psf,omitempty"`
+	LatestDate          *string               `json:"latest_transaction,omitempty"`
+	TenureType          *string               `json:"tenure_type,omitempty"`
+	LeaseCommenceYear   *int32                `json:"lease_commence_year,omitempty"`
+	RemainingLeaseYears *int32                `json:"remaining_lease_years,omitempty"`
+	HDBYearCompleted    *int32                `json:"hdb_year_completed,omitempty"`
+	HDBMaxFloorLevel    *int32                `json:"hdb_max_floor_lvl,omitempty"`
+	HDBTotalUnits       *int32                `json:"hdb_total_dwelling_units,omitempty"`
+	HDBSoldUnits        *int32                `json:"hdb_sold_units,omitempty"`
+	HDBRentalUnits      *int32                `json:"hdb_rental_units,omitempty"`
+	HDBRentalPct        *float64              `json:"hdb_rental_pct,omitempty"`
+	ExternalLinks       []externalProjectLink `json:"external_links,omitempty"`
+}
+
+type externalProjectLink struct {
+	Provider    string   `json:"provider"`
+	SaleURL     *string  `json:"url_sale,omitempty"`
+	RentURL     *string  `json:"url_rent,omitempty"`
+	ProjectURL  *string  `json:"url_project,omitempty"`
+	MatchMethod *string  `json:"match_method,omitempty"`
+	Confidence  *float64 `json:"confidence,omitempty"`
 }
 
 // projectFields is the column list (without GROUP BY/aggregates) used by
@@ -203,26 +213,60 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
+	links, err := s.projectExternalLinks(r, id)
+	if err != nil {
+		s.logger.Error("projectExternalLinks", "err", err)
+		writeError(w, http.StatusInternalServerError, "external link query error")
+		return
+	}
+	p.ExternalLinks = links
 	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) projectExternalLinks(r *http.Request, projectID int64) ([]externalProjectLink, error) {
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT provider, url_sale, url_rent, url_project, match_method, confidence
+		FROM external_project_links
+		WHERE project_id = $1
+		ORDER BY provider`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	links := make([]externalProjectLink, 0, 2)
+	for rows.Next() {
+		var l externalProjectLink
+		if err := rows.Scan(
+			&l.Provider, &l.SaleURL, &l.RentURL, &l.ProjectURL, &l.MatchMethod, &l.Confidence,
+		); err != nil {
+			return nil, err
+		}
+		links = append(links, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return links, nil
 }
 
 // ---- /api/projects/{id}/transactions ----
 
 type transaction struct {
-	ID                  int64    `json:"id"`
-	ContractDate        string   `json:"contract_date"`
-	AreaSqm             *float64 `json:"area_sqm,omitempty"`
-	Price               float64  `json:"price"`
-	PSF                 *float64 `json:"psf,omitempty"`
-	FloorRange          *string  `json:"floor_range,omitempty"`
-	PropertyType        *string  `json:"property_type,omitempty"`
-	TypeOfSale          *string  `json:"type_of_sale,omitempty"`
-	FlatType            *string  `json:"flat_type,omitempty"`
-	NoOfUnits           *int32   `json:"no_of_units,omitempty"`
+	ID           int64    `json:"id"`
+	ContractDate string   `json:"contract_date"`
+	AreaSqm      *float64 `json:"area_sqm,omitempty"`
+	Price        float64  `json:"price"`
+	PSF          *float64 `json:"psf,omitempty"`
+	FloorRange   *string  `json:"floor_range,omitempty"`
+	PropertyType *string  `json:"property_type,omitempty"`
+	TypeOfSale   *string  `json:"type_of_sale,omitempty"`
+	FlatType     *string  `json:"flat_type,omitempty"`
+	NoOfUnits    *int32   `json:"no_of_units,omitempty"`
 	// Remaining lease (in years) computed at the contract_date — derived
 	// from the project's tenure_type + lease_commence_year. Null for
 	// freehold / unknown-tenure projects.
-	RemainingLeaseAtTxn *int32   `json:"remaining_lease_at_txn,omitempty"`
+	RemainingLeaseAtTxn *int32 `json:"remaining_lease_at_txn,omitempty"`
 }
 
 func (s *Server) handleProjectTransactions(w http.ResponseWriter, r *http.Request) {
@@ -303,16 +347,16 @@ type ownStats struct {
 }
 
 type nearbyStats struct {
-	AvgPSF   *float64 `json:"avg_psf"`
-	Count    int64    `json:"count"`
-	RadiusM  int      `json:"radius_m"`
+	AvgPSF  *float64 `json:"avg_psf"`
+	Count   int64    `json:"count"`
+	RadiusM int      `json:"radius_m"`
 }
 
 type comparisonResponse struct {
-	ProjectID   int64        `json:"project_id"`
-	Own         ownStats     `json:"own"`
-	Nearby500m  nearbyStats  `json:"nearby_500m"`
-	PremiumPct  *float64     `json:"premium_pct"`
+	ProjectID  int64       `json:"project_id"`
+	Own        ownStats    `json:"own"`
+	Nearby500m nearbyStats `json:"nearby_500m"`
+	PremiumPct *float64    `json:"premium_pct"`
 }
 
 func (s *Server) handleProjectComparison(w http.ResponseWriter, r *http.Request) {
@@ -375,7 +419,7 @@ func (s *Server) handleProjectComparison(w http.ResponseWriter, r *http.Request)
 		Nearby500m: nearby,
 	}
 	if own.AvgPSF != nil && nearby.AvgPSF != nil && *nearby.AvgPSF > 0 {
-		pct := math.Round((*own.AvgPSF / *nearby.AvgPSF - 1) * 1000) / 10 // 1 d.p.
+		pct := math.Round((*own.AvgPSF / *nearby.AvgPSF - 1)*1000) / 10 // 1 d.p.
 		resp.PremiumPct = &pct
 	}
 	writeJSON(w, http.StatusOK, resp)

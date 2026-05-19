@@ -119,6 +119,23 @@ CREATE TABLE IF NOT EXISTS developer_sales_snapshots (
 CREATE INDEX IF NOT EXISTS idx_dev_sales_project ON developer_sales_snapshots (project_id);
 CREATE INDEX IF NOT EXISTS idx_dev_sales_month ON developer_sales_snapshots (snapshot_month);
 
+-- external_project_links: manually curated outbound links to listing portals.
+-- These are link-outs only; purePSF does not ingest third-party listing content.
+CREATE TABLE IF NOT EXISTS external_project_links (
+    project_id      BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    provider        TEXT NOT NULL,
+    url_sale        TEXT,
+    url_rent        TEXT,
+    url_project     TEXT,
+    match_method    TEXT,
+    confidence      DOUBLE PRECISION,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_project_links_provider
+    ON external_project_links (provider);
+
 -- tracked_projects: the 10 MVP picks (and beyond)
 CREATE TABLE IF NOT EXISTS tracked_projects (
     project_id      BIGINT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
