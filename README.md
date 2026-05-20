@@ -104,8 +104,8 @@ INSERT INTO external_project_links
   (project_id, provider, url_sale, url_rent, url_project, match_method, confidence)
 VALUES
   (123, 'propertyguru',
-   'https://www.propertyguru.com.sg/property-for-sale/at-example-condo-123',
-   'https://www.propertyguru.com.sg/property-for-rent/at-example-condo-123',
+   'https://www.propertyguru.com.sg/project-listings/example-condo-123/sale/1',
+   'https://www.propertyguru.com.sg/project-listings/example-condo-123/rent/1',
    'https://www.propertyguru.com.sg/project/example-condo-123',
    'manual', 1.0)
 ON CONFLICT (project_id, provider) DO UPDATE
@@ -118,9 +118,10 @@ SET url_sale = EXCLUDED.url_sale,
 ```
 
 If no curated PropertyGuru URL exists, the frontend falls back to a PropertyGuru
-sale/rent search using the purePSF project name and street. A future browser
-extension should live in its own repository and be mounted here as a git
-submodule, for example under `integrations/propertyguru-extension/`.
+sale/rent search using the purePSF project name and street. If only a
+PropertyGuru project URL is curated, the frontend derives the corresponding
+`project-listings/.../sale/1` and `project-listings/.../rent/1` available-unit
+links.
 
 ## Data sources
 

@@ -33,11 +33,25 @@ function propertyGuruSearchUrl(project: ProjectSummary, kind: 'sale' | 'rent') {
   return `https://www.propertyguru.com.sg/${section}?freetext=${encodeURIComponent(query)}`
 }
 
+function propertyGuruProjectListingsUrl(projectUrl: string | undefined, kind: 'sale' | 'rent') {
+  if (!projectUrl) return undefined
+  try {
+    const url = new URL(projectUrl)
+    const match = url.pathname.match(/^\/project\/([^/]+)\/?$/)
+    if (!match) return undefined
+    return `${url.origin}/project-listings/${match[1]}/${kind}/1`
+  } catch {
+    return undefined
+  }
+}
+
 function propertyGuruLinks(project: ProjectSummary) {
   const mapped = project.external_links?.find((link) => link.provider === 'propertyguru')
+  const projectSale = propertyGuruProjectListingsUrl(mapped?.url_project, 'sale')
+  const projectRent = propertyGuruProjectListingsUrl(mapped?.url_project, 'rent')
   return {
-    sale: mapped?.url_sale ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'sale'),
-    rent: mapped?.url_rent ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'rent'),
+    sale: mapped?.url_sale ?? projectSale ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'sale'),
+    rent: mapped?.url_rent ?? projectRent ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'rent'),
     mapped: Boolean(mapped?.url_sale || mapped?.url_rent || mapped?.url_project),
   }
 }
@@ -246,7 +260,7 @@ function PropertyGuruBlock({ project }: { project: ProjectSummary }) {
           rel="noreferrer"
           className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
         >
-          PropertyGuru sale
+          Sale listings
         </a>
         <a
           href={links.rent}
@@ -254,7 +268,7 @@ function PropertyGuruBlock({ project }: { project: ProjectSummary }) {
           rel="noreferrer"
           className="rounded border border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100"
         >
-          PropertyGuru rent
+          Rent listings
         </a>
       </div>
     </div>
