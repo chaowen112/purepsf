@@ -33,6 +33,13 @@ export type ExternalProjectLink = {
   confidence?: number
 }
 
+export type ProjectFilters = {
+  property_type?: 'hdb' | 'condo' | 'ec' | 'landed'
+  top_after?: number
+  min_price?: number
+  max_price?: number
+}
+
 export type Transaction = {
   id: number
   contract_date: string
@@ -62,9 +69,14 @@ async function get<T>(path: string): Promise<T> {
   return res.json()
 }
 
-export function fetchProjects(bbox: [number, number, number, number]) {
+export function fetchProjects(bbox: [number, number, number, number], filters: ProjectFilters = {}) {
   const [lng1, lat1, lng2, lat2] = bbox
-  return get<ProjectSummary[]>(`/api/projects?bbox=${lng1},${lat1},${lng2},${lat2}`)
+  const q = new URLSearchParams({ bbox: `${lng1},${lat1},${lng2},${lat2}` })
+  if (filters.property_type) q.set('property_type', filters.property_type)
+  if (filters.top_after) q.set('top_after', String(filters.top_after))
+  if (filters.min_price) q.set('min_price', String(filters.min_price))
+  if (filters.max_price) q.set('max_price', String(filters.max_price))
+  return get<ProjectSummary[]>(`/api/projects?${q}`)
 }
 
 export function fetchProject(id: number) {

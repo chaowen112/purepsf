@@ -7,6 +7,25 @@ import { fetchComparison, fetchTransactions, type Comparison, type ProjectSummar
 
 type Props = { project: ProjectSummary; onClose: () => void }
 
+type PropertyGuruAutocompleteHit = {
+  objectId: string
+  objectType: string
+  displayText: string
+  displayType?: string
+  displayDescription?: string
+  properties?: {
+    propertyTypeGroup?: string
+    propertySubType?: string
+  }
+}
+
+type PropertyGuruResolvedLinks = {
+  sale: string
+  rent: string
+  label: string
+  source: 'mapped' | 'autocomplete'
+}
+
 const SALE_COLORS: Record<string, string> = {
   'New Sale': '#3b82f6',
   'Sub Sale': '#f59e0b',
@@ -27,12 +46,6 @@ function fmtPrice(p: number) {
   return `$${p}`
 }
 
-function propertyGuruSearchUrl(project: ProjectSummary, kind: 'sale' | 'rent') {
-  const query = [project.name, project.street].filter(Boolean).join(' ')
-  const section = kind === 'sale' ? 'property-for-sale' : 'property-for-rent'
-  return `https://www.propertyguru.com.sg/${section}?freetext=${encodeURIComponent(query)}`
-}
-
 function propertyGuruProjectListingsUrl(projectUrl: string | undefined, kind: 'sale' | 'rent') {
   if (!projectUrl) return undefined
   try {
@@ -45,15 +58,97 @@ function propertyGuruProjectListingsUrl(projectUrl: string | undefined, kind: 's
   }
 }
 
-function propertyGuruLinks(project: ProjectSummary) {
+function mappedPropertyGuruLinks(project: ProjectSummary): PropertyGuruResolvedLinks | null {
   const mapped = project.external_links?.find((link) => link.provider === 'propertyguru')
+  if (!mapped) return null
   const projectSale = propertyGuruProjectListingsUrl(mapped?.url_project, 'sale')
   const projectRent = propertyGuruProjectListingsUrl(mapped?.url_project, 'rent')
+  const sale = mapped?.url_sale ?? projectSale ?? mapped?.url_project
+  const rent = mapped?.url_rent ?? projectRent ?? mapped?.url_project
+  if (!sale || !rent) return null
   return {
-    sale: mapped?.url_sale ?? projectSale ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'sale'),
-    rent: mapped?.url_rent ?? projectRent ?? mapped?.url_project ?? propertyGuruSearchUrl(project, 'rent'),
-    mapped: Boolean(mapped?.url_sale || mapped?.url_rent || mapped?.url_project),
+    sale,
+    rent,
+    label: 'Mapped',
+    source: 'mapped',
   }
+}
+
+function propertyGuruAutocompleteQuery(project: ProjectSummary) {
+  if (project.source === 'HDB') {
+    const blockStreet = project.name.replace(/^BLK\s+/i, '').trim()
+    return blockStreet || [project.name, project.street].filter(Boolean).join(' ')
+  }
+  return project.name
+}
+
+function normalizePropertyName(value: string | undefined) {
+  return (value ?? '')
+    .toUpperCase()
+    .replace(/^BLK\s+/, '')
+    .replace(/[@]/g, ' AT ')
+    .replace(/\bCRESC?\b/g, 'CRESCENT')
+    .replace(/\bRD\b/g, 'ROAD')
+    .replace(/\bST\b/g, 'STREET')
+    .replace(/\bAVE\b/g, 'AVENUE')
+    .replace(/\bDR\b/g, 'DRIVE')
+    .replace(/\bCL\b/g, 'CLOSE')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function isPropertyGuruExactMatch(project: ProjectSummary, hit: PropertyGuruAutocompleteHit, query: string) {
+  if (hit.objectType !== 'PROPERTY') return false
+  if (project.postal_code && hit.displayDescription?.includes(project.postal_code)) return true
+  return normalizePropertyName(hit.displayText) === normalizePropertyName(query)
+}
+
+function slugifyPropertyGuru(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[@]/g, ' ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function autocompletePropertyGuruLinks(hit: PropertyGuruAutocompleteHit): PropertyGuruResolvedLinks {
+  const group = hit.properties?.propertyTypeGroup?.toUpperCase()
+  if (group === 'HDB') {
+    return {
+      sale: `https://www.propertyguru.com.sg/property-for-sale?property_id=${encodeURIComponent(hit.objectId)}`,
+      rent: `https://www.propertyguru.com.sg/property-for-rent?property_id=${encodeURIComponent(hit.objectId)}`,
+      label: hit.displayText,
+      source: 'autocomplete',
+    }
+  }
+
+  const slug = `${slugifyPropertyGuru(hit.displayText)}-${hit.objectId}`
+  return {
+    sale: `https://www.propertyguru.com.sg/project-listings/${slug}/sale/1`,
+    rent: `https://www.propertyguru.com.sg/project-listings/${slug}/rent/1`,
+    label: hit.displayText,
+    source: 'autocomplete',
+  }
+}
+
+async function resolvePropertyGuruLinks(project: ProjectSummary, signal: AbortSignal) {
+  const mapped = mappedPropertyGuruLinks(project)
+  if (mapped) return mapped
+
+  const query = propertyGuruAutocompleteQuery(project)
+  if (!query) return null
+  const params = new URLSearchParams({
+    marketplace: 'pgsg',
+    locale: 'en',
+    limit: '20',
+    query,
+  })
+  const res = await fetch(`https://autocomplete.propertyguru.com/v1/search?${params}`, { signal })
+  if (!res.ok) throw new Error(`PropertyGuru autocomplete returned ${res.status}`)
+  const hits = (await res.json()) as PropertyGuruAutocompleteHit[]
+  const match = hits.find((hit) => isPropertyGuruExactMatch(project, hit, query))
+  return match ? autocompletePropertyGuruLinks(match) : null
 }
 
 export default function ProjectPanel({ project, onClose }: Props) {
@@ -244,33 +339,67 @@ export default function ProjectPanel({ project, onClose }: Props) {
 }
 
 function PropertyGuruBlock({ project }: { project: ProjectSummary }) {
-  const links = propertyGuruLinks(project)
+  const [links, setLinks] = useState<PropertyGuruResolvedLinks | null>(null)
+  const [status, setStatus] = useState<'checking' | 'found' | 'missing' | 'error'>('checking')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLinks(null)
+    setStatus('checking')
+
+    resolvePropertyGuruLinks(project, controller.signal)
+      .then((resolved) => {
+        if (controller.signal.aborted) return
+        setLinks(resolved)
+        setStatus(resolved ? 'found' : 'missing')
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setStatus('error')
+      })
+
+    return () => controller.abort()
+  }, [project.id])
+
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">Available listings</h3>
-        {links.mapped && (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">Mapped</span>
+        {links && (
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+            {links.source === 'mapped' ? 'Mapped' : 'Matched'}
+          </span>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <a
-          href={links.sale}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
-        >
-          Sale listings
-        </a>
-        <a
-          href={links.rent}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded border border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-        >
-          Rent listings
-        </a>
-      </div>
+      {links ? (
+        <>
+          <p className="mb-2 truncate text-xs text-slate-500" title={links.label}>{links.label}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={links.sale}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
+            >
+              Sale listings
+            </a>
+            <a
+              href={links.rent}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              Rent listings
+            </a>
+          </div>
+        </>
+      ) : (
+        <p className="text-xs text-slate-500">
+          {status === 'checking' && 'Checking PropertyGuru...'}
+          {status === 'missing' && 'No exact PropertyGuru match found.'}
+          {status === 'error' && 'PropertyGuru match check failed.'}
+        </p>
+      )}
     </div>
   )
 }

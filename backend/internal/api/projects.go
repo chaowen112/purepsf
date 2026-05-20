@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -76,6 +77,60 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		coords[i] = v
 	}
 	lng1, lat1, lng2, lat2 := coords[0], coords[1], coords[2], coords[3]
+	args := []any{lng1, lat1, lng2, lat2}
+	whereParts := []string{
+		"p.geom IS NOT NULL",
+		"p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)",
+	}
+	havingParts := []string{}
+
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("property_type"))) {
+	case "", "all":
+	case "hdb":
+		whereParts = append(whereParts, "p.source = 'HDB'")
+	case "condo":
+		whereParts = append(whereParts, "p.source = 'URA' AND p.property_type IN ('Condominium', 'Apartment')")
+	case "ec":
+		whereParts = append(whereParts, "p.source = 'URA' AND p.property_type = 'Executive Condominium'")
+	case "landed":
+		whereParts = append(whereParts, "p.source = 'URA' AND p.property_type IN ('Terrace', 'Semi-detached', 'Detached', 'Strata Terrace', 'Strata Semi-detached', 'Strata Detached')")
+	}
+
+	if topAfter := strings.TrimSpace(r.URL.Query().Get("top_after")); topAfter != "" {
+		year, err := strconv.Atoi(topAfter)
+		if err != nil || year < 1800 || year > 2200 {
+			writeError(w, http.StatusBadRequest, "invalid top_after")
+			return
+		}
+		args = append(args, year)
+		whereParts = append(whereParts, fmt.Sprintf("COALESCE(hpi.year_completed, p.lease_commence_year) >= $%d", len(args)))
+	}
+
+	if minPrice := strings.TrimSpace(r.URL.Query().Get("min_price")); minPrice != "" {
+		price, err := strconv.Atoi(minPrice)
+		if err != nil || price < 0 {
+			writeError(w, http.StatusBadRequest, "invalid min_price")
+			return
+		}
+		args = append(args, price)
+		havingParts = append(havingParts, fmt.Sprintf("AVG(t.price) >= $%d", len(args)))
+	}
+
+	if maxPrice := strings.TrimSpace(r.URL.Query().Get("max_price")); maxPrice != "" {
+		price, err := strconv.Atoi(maxPrice)
+		if err != nil || price < 0 {
+			writeError(w, http.StatusBadRequest, "invalid max_price")
+			return
+		}
+		args = append(args, price)
+		havingParts = append(havingParts, fmt.Sprintf("AVG(t.price) <= $%d", len(args)))
+	}
+
+	whereSQL := strings.Join(whereParts, "\n		  AND ")
+	havingSQL := ""
+	if len(havingParts) > 0 {
+		havingSQL = "\n		HAVING " + strings.Join(havingParts, "\n		   AND ")
+	}
 
 	q := `
 		SELECT p.id, p.source::text, p.name, p.street, p.postal_code, p.district, p.market_segment,
@@ -109,19 +164,18 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		FROM projects p
 		LEFT JOIN transactions t ON t.project_id = p.id
 		LEFT JOIN hdb_property_info hpi ON p.source = 'HDB' AND hpi.project_key = p.project_key
-		WHERE p.geom IS NOT NULL
-		  AND p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+		WHERE ` + whereSQL + `
 		GROUP BY p.id,
 		         hpi.year_completed, hpi.max_floor_lvl, hpi.total_dwelling_units,
 		         hpi.one_room_sold, hpi.two_room_sold, hpi.three_room_sold,
 		         hpi.four_room_sold, hpi.five_room_sold, hpi.exec_sold,
 		         hpi.multigen_sold, hpi.studio_apartment_sold,
 		         hpi.one_room_rental, hpi.two_room_rental, hpi.three_room_rental,
-		         hpi.other_room_rental
+		         hpi.other_room_rental` + havingSQL + `
 		ORDER BY transaction_count DESC
 		LIMIT 500`
 
-	rows, err := s.pool.Query(r.Context(), q, lng1, lat1, lng2, lat2)
+	rows, err := s.pool.Query(r.Context(), q, args...)
 	if err != nil {
 		s.logger.Error("handleListProjects", "err", err)
 		writeError(w, http.StatusInternalServerError, "query error")

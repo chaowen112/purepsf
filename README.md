@@ -85,7 +85,7 @@ is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>
 | Method | Path | Description |
 |---|---|---|
 | GET | `/healthz` | DB ping |
-| GET | `/api/projects?bbox=lng1,lat1,lng2,lat2` | Projects within map viewport (≤ 500) |
+| GET | `/api/projects?bbox=lng1,lat1,lng2,lat2&property_type=&top_after=&min_price=&max_price=` | Projects within map viewport (≤ 500), optionally filtered by `hdb` / `condo` / `ec` / `landed`, TOP/lease year, and average transaction price |
 | GET | `/api/projects/{id}/transactions?from=&to=` | Per-project transaction list |
 | GET | `/api/projects/{id}/comparison` | Own avg PSF, 500m-nearby avg PSF (last 24mo), premium % |
 | GET | `/api/tracked` | Tracked projects + latest stats |
@@ -117,9 +117,10 @@ SET url_sale = EXCLUDED.url_sale,
     updated_at = now();
 ```
 
-If no curated PropertyGuru URL exists, the frontend falls back to a PropertyGuru
-sale/rent search using the purePSF project name and street. If only a
-PropertyGuru project URL is curated, the frontend derives the corresponding
+If no curated PropertyGuru URL exists, the frontend checks PropertyGuru's
+autocomplete endpoint and only shows sale/rent buttons for an exact project or
+HDB block match. It does not fall back to broad free-text search links. If only
+a PropertyGuru project URL is curated, the frontend derives the corresponding
 `project-listings/.../sale/1` and `project-listings/.../rent/1` available-unit
 links.
 
