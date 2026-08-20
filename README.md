@@ -72,7 +72,7 @@ Topology:
 ```
  host  ─── :80 ───►  nginx (frontend)
                       ├── /assets/*  → static
-                      └── /api/* /healthz → backend:8080  (internal-only network)
+                      └── /api/* /healthz /p/* → backend:8080  (internal-only network)
                                             └── postgres:5432  (internal-only)
 ```
 
@@ -88,6 +88,7 @@ is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>
 | GET | `/api/projects?bbox=lng1,lat1,lng2,lat2&property_type=&top_after=&min_price=&max_price=` | Projects within map viewport (≤ 500), optionally filtered by `hdb` / `condo` / `ec` / `landed`, TOP/lease year, and average transaction price |
 | GET | `/api/projects/{id}/transactions?from=&to=` | Per-project transaction list |
 | GET | `/api/projects/{id}/comparison` | Own avg PSF, 500m-nearby avg PSF (last 24mo), premium % |
+| GET | `/p/{id}/{slug}` | Server-rendered property HTML; non-canonical slugs redirect, unknown IDs return HTTP 404 |
 | GET | `/api/tracked` | Tracked projects + latest stats |
 | GET | `/api/subzones/stats?from=&to=&source=` | GeoJSON FeatureCollection of MP19 subzones with avg PSF per polygon |
 

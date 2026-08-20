@@ -18,7 +18,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
       # Bind to loopback only so the DB isn't reachable from the public iface.
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "192.168.0.10:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Init script runs schema.sql + every migration in order on first start.
@@ -47,6 +47,8 @@ services:
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
     # No published port — frontend (nginx) reverse-proxies via the internal network.
     expose: ["8080"]
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
     networks: [internal]
 
   frontend:

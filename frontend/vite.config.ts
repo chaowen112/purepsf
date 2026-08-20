@@ -3,6 +3,22 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The Go SSR response references these two entry assets directly. Keep
+    // chunks/media hashed, but give the entry JS/CSS stable names; nginx
+    // serves only these two with revalidation instead of immutable caching.
+    cssCodeSplit: false,
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/app.js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: (assetInfo) =>
+          assetInfo.name?.endsWith(".css")
+            ? "assets/app.css"
+            : "assets/[name]-[hash][extname]",
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

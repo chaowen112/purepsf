@@ -42,6 +42,10 @@ func NewRouter(pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 		r.Get("/healthz", s.handleHealth)
 		r.Get("/robots.txt", s.handleRobotsTxt)
 		r.Get("/sitemap.xml", s.handleSitemapXML)
+		// Property pages are rendered by the backend so crawlers receive the
+		// canonical URL and transaction content in the first HTML response.
+		r.Get("/p/{id}", s.handlePropertyPage)
+		r.Get("/p/{id}/{slug}", s.handlePropertyPage)
 		r.Route("/api", func(r chi.Router) {
 			r.Get("/projects", s.handleListProjects)
 			r.Get("/projects/{id}", s.handleGetProject)

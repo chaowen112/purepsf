@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet-async'
 import ProjectPanel from '../components/ProjectPanel'
 import { fetchProject, type ProjectSummary } from '../api'
 import type { MapShellContext } from './MapShell'
+import { slugify } from '../lib/slug'
 
 const SITE = 'https://purepsf.tet.sg'
 
@@ -72,10 +73,11 @@ function ProjectMeta({ project: p }: { project: ProjectSummary }) {
     <Helmet>
       <title>{title}</title>
       <meta name="description" content={desc} />
-      <link rel="canonical" href={`${SITE}/p/${p.id}`} />
+      <link rel="canonical" href={`${SITE}/p/${p.id}/${slugify(p.name)}`} />
       <meta property="og:title" content={title} />
       <meta property="og:description" content={desc} />
       <meta property="og:type" content="article" />
+      <meta property="og:url" content={`${SITE}/p/${p.id}/${slugify(p.name)}`} />
     </Helmet>
   )
 }

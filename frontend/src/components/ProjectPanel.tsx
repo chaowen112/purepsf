@@ -194,7 +194,7 @@ export default function ProjectPanel({ project, onClose }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between border-b px-4 py-3">
         <div className="min-w-0">
-          <h2 className="font-semibold text-slate-800 leading-tight truncate">{project.name}</h2>
+          <h1 className="font-semibold text-slate-800 leading-tight truncate">{project.name}</h1>
           {addrLine && (
             <p className="text-xs text-slate-500 mt-0.5 truncate">{addrLine}</p>
           )}
@@ -532,9 +532,9 @@ function TransactionList({ txns, projectName }: { txns: Transaction[]; projectNa
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
-        <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-          Transactions
-        </h3>
+        <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+          Transaction history
+        </h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">{total} total</span>
           <button
