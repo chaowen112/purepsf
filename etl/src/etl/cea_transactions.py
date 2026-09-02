@@ -2,20 +2,20 @@
 
 Resource: d_ee7e46d3c57f7865790704632b0aef71 (~1.3M rows, monthly refresh).
 
-Strategy: full reload via TRUNCATE + batched COPY. Each batch is its own
-short COPY transaction so a network blip on page N doesn't roll back
-the previous N-1 pages. The HTTP fetch is wrapped in tenacity retry to
-survive transient ReadTimeouts on the data.gov.sg API.
+Strategy: stream data.gov.sg's official bulk CSV into a staging
+table, then replace the live table in one transaction. A download or parse
+failure therefore leaves the previous complete snapshot available to the API.
 """
 from __future__ import annotations
 
+import csv
 import logging
+from collections.abc import Iterable
 from datetime import date, datetime
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 import psycopg
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from etl import config
 from etl.db import connect
@@ -23,10 +23,13 @@ from etl.db import connect
 logger = logging.getLogger(__name__)
 
 _RESOURCE_ID = "d_ee7e46d3c57f7865790704632b0aef71"
-_URL = "https://data.gov.sg/api/action/datastore_search"
-_PAGE_SIZE = 10_000
-# Rows per COPY transaction. Higher = fewer commits but more re-work on failure.
+_DOWNLOAD_URL = (
+    "https://api-open.data.gov.sg/v1/public/api/datasets/"
+    f"{_RESOURCE_ID}/poll-download"
+)
 _COMMIT_BATCH = 50_000
+_STAGING_TABLE = "salesperson_transactions_next"
+_PREVIOUS_TABLE = "salesperson_transactions_previous"
 
 
 def parse_cea_month(v: str | None) -> date | None:
@@ -64,27 +67,20 @@ def _row(rec: dict[str, Any]) -> tuple | None:
     )
 
 
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
-    reraise=True,
-)
-def _fetch_page(http: httpx.Client, offset: int, limit: int) -> list[dict[str, Any]]:
-    resp = http.get(_URL, params={
-        "resource_id": _RESOURCE_ID,
-        "limit": limit,
-        "offset": offset,
-    })
+def _get_download_url(http: httpx.Client) -> str:
+    resp = http.get(_DOWNLOAD_URL)
     resp.raise_for_status()
-    return (resp.json().get("result") or {}).get("records") or []
+    data = resp.json().get("data") or {}
+    if data.get("status") != "DOWNLOAD_SUCCESS" or not data.get("url"):
+        raise RuntimeError(f"CEA bulk download unavailable: status={data.get('status')!r}")
+    return str(data["url"])
 
 
 def _copy_batch(conn: psycopg.Connection, rows: Iterable[tuple]) -> int:
     """COPY one batch + commit. Returns number of rows written."""
     n = 0
     with conn.cursor() as cur, cur.copy(
-        "COPY salesperson_transactions ("
+        f"COPY {_STAGING_TABLE} ("
         "salesperson_reg_num, salesperson_name, transaction_date, "
         "property_type, transaction_type, represented, town, district, general_location"
         ") FROM STDIN"
@@ -96,45 +92,117 @@ def _copy_batch(conn: psycopg.Connection, rows: Iterable[tuple]) -> int:
     return n
 
 
+def _prepare_staging(conn: psycopg.Connection) -> None:
+    conn.execute(f"DROP TABLE IF EXISTS {_STAGING_TABLE}")
+    conn.execute(
+        f"CREATE TABLE {_STAGING_TABLE} "
+        "(LIKE salesperson_transactions INCLUDING DEFAULTS INCLUDING CONSTRAINTS)"
+    )
+    conn.commit()
+
+
+def _index_staging(conn: psycopg.Connection) -> None:
+    conn.execute(
+        f"ALTER TABLE {_STAGING_TABLE} "
+        f"ADD CONSTRAINT {_STAGING_TABLE}_pkey PRIMARY KEY (id)"
+    )
+    for suffix, columns in (
+        ("reg", "salesperson_reg_num"),
+        ("town", "town"),
+        ("date", "transaction_date"),
+        ("ptype", "property_type"),
+        ("rep", "represented"),
+        ("filter", "town, property_type, represented"),
+    ):
+        conn.execute(
+            f"CREATE INDEX idx_sp_txn_next_{suffix} "
+            f"ON {_STAGING_TABLE} ({columns})"
+        )
+    conn.commit()
+
+
+def _swap_staging(conn: psycopg.Connection) -> None:
+    """Atomically publish the staged snapshot without copying it again."""
+    conn.execute("LOCK TABLE salesperson_transactions IN ACCESS EXCLUSIVE MODE")
+    conn.execute(f"DROP TABLE IF EXISTS {_PREVIOUS_TABLE}")
+    # BIGSERIAL's sequence starts owned by the live table. Transfer ownership
+    # before dropping that table so the staged table keeps a valid default.
+    conn.execute(
+        "ALTER SEQUENCE salesperson_transactions_id_seq "
+        f"OWNED BY {_STAGING_TABLE}.id"
+    )
+    conn.execute(
+        f"ALTER TABLE salesperson_transactions RENAME TO {_PREVIOUS_TABLE}"
+    )
+    conn.execute(
+        f"ALTER TABLE {_STAGING_TABLE} RENAME TO salesperson_transactions"
+    )
+    conn.execute(f"DROP TABLE {_PREVIOUS_TABLE}")
+    conn.execute(
+        "ALTER TABLE salesperson_transactions "
+        f"RENAME CONSTRAINT {_STAGING_TABLE}_pkey TO salesperson_transactions_pkey"
+    )
+    for suffix, live_name in (
+        ("reg", "idx_sp_txn_reg"),
+        ("town", "idx_sp_txn_town"),
+        ("date", "idx_sp_txn_date"),
+        ("ptype", "idx_sp_txn_ptype"),
+        ("rep", "idx_sp_txn_rep"),
+        ("filter", "idx_sp_txn_filter"),
+    ):
+        conn.execute(
+            f"ALTER INDEX idx_sp_txn_next_{suffix} RENAME TO {live_name}"
+        )
+    conn.commit()
+
+
 def run(limit: int | None = None) -> None:
     cfg = config.load()
-    offset = 0
     total_seen = 0
     written = 0
     pending: list[tuple] = []
 
-    with connect(cfg.database_url) as conn, httpx.Client(timeout=120) as http:
-        conn.execute("TRUNCATE salesperson_transactions RESTART IDENTITY")
-        conn.commit()
-        logger.info("cea-transactions: truncated; beginning load")
+    with connect(cfg.database_url) as conn, httpx.Client(
+        follow_redirects=True,
+        timeout=httpx.Timeout(120),
+    ) as http:
+        _prepare_staging(conn)
+        logger.info("cea-transactions: streaming official bulk CSV into staging")
 
-        while True:
-            page_limit = _PAGE_SIZE if limit is None else min(_PAGE_SIZE, limit - total_seen)
-            if page_limit <= 0:
-                break
-            records = _fetch_page(http, offset, page_limit)
-            if not records:
-                break
+        download_url = _get_download_url(http)
+        httpx_logger = logging.getLogger("httpx")
+        previous_httpx_level = httpx_logger.level
+        httpx_logger.setLevel(logging.WARNING)
+        try:
+            with http.stream("GET", download_url) as resp:
+                resp.raise_for_status()
+                for rec in csv.DictReader(resp.iter_lines()):
+                    if limit is not None and total_seen >= limit:
+                        break
+                    row = _row(rec)
+                    if row is not None:
+                        pending.append(row)
+                    total_seen += 1
 
-            for rec in records:
-                row = _row(rec)
-                if row is not None:
-                    pending.append(row)
-            total_seen += len(records)
-            offset += len(records)
-
-            if len(pending) >= _COMMIT_BATCH:
-                n = _copy_batch(conn, pending)
-                written += n
-                pending.clear()
-                logger.info("cea-transactions: total_seen=%d written=%d (committed)", total_seen, written)
-
-            if len(records) < page_limit:
-                break
+                    if len(pending) >= _COMMIT_BATCH:
+                        written += _copy_batch(conn, pending)
+                        pending.clear()
+                        logger.info(
+                            "cea-transactions: total_seen=%d staged=%d",
+                            total_seen,
+                            written,
+                        )
+        finally:
+            httpx_logger.setLevel(previous_httpx_level)
 
         if pending:
-            n = _copy_batch(conn, pending)
-            written += n
+            written += _copy_batch(conn, pending)
             pending.clear()
+
+        if written == 0:
+            raise RuntimeError("CEA bulk download produced no valid transaction rows")
+
+        _index_staging(conn)
+        _swap_staging(conn)
 
     logger.info("cea-transactions done: total_seen=%d written=%d", total_seen, written)

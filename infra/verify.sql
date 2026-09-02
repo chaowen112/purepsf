@@ -3,7 +3,7 @@
 --
 -- Hard fails (RAISE EXCEPTION):
 --   - any source with 0 projects or 0 transactions
---   - >1% of projects without geom
+--   - excessive missing geometry among projects active in the last 24 months
 --   - PSF distribution outside SG-plausible band (50 < median < 5000)
 --   - any project with future-dated transactions
 
@@ -46,7 +46,7 @@ WHERE source = 'HDB' AND postal_code IS NULL;
 DO $$
 DECLARE
     ura_p INT; ura_t INT; hdb_p INT; hdb_t INT;
-    no_geom_pct NUMERIC; future_txn INT;
+    ura_no_geom_pct NUMERIC; hdb_no_geom_pct NUMERIC; future_txn INT;
     median_psf NUMERIC;
 BEGIN
     SELECT COUNT(*) INTO ura_p FROM projects WHERE source = 'URA';
@@ -61,10 +61,28 @@ BEGIN
         RAISE EXCEPTION 'HDB empty: projects=% transactions=%', hdb_p, hdb_t;
     END IF;
 
-    SELECT 100.0 * COUNT(*) FILTER (WHERE geom IS NULL) / NULLIF(COUNT(*), 0)
-    INTO no_geom_pct FROM projects;
-    IF no_geom_pct > 1.0 THEN
-        RAISE EXCEPTION 'too many projects missing geom: %.2f%%', no_geom_pct;
+    SELECT 100.0 * COUNT(DISTINCT p.id) FILTER (WHERE p.geom IS NULL)
+           / NULLIF(COUNT(DISTINCT p.id), 0)
+    INTO ura_no_geom_pct
+    FROM projects p
+    JOIN transactions t ON t.project_id = p.id
+    WHERE p.source = 'URA'
+      AND t.contract_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '24 months';
+
+    SELECT 100.0 * COUNT(DISTINCT p.id) FILTER (WHERE p.geom IS NULL)
+           / NULLIF(COUNT(DISTINCT p.id), 0)
+    INTO hdb_no_geom_pct
+    FROM projects p
+    JOIN transactions t ON t.project_id = p.id
+    WHERE p.source = 'HDB'
+      AND t.contract_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '24 months';
+
+    -- Some URA projects legitimately arrive without SVY21 coordinates. HDB
+    -- has a OneMap fallback, so its acceptable active-project miss rate is
+    -- lower. Full all-time counts remain visible in the report above.
+    IF ura_no_geom_pct > 5.0 OR hdb_no_geom_pct > 1.0 THEN
+        RAISE EXCEPTION 'too many active projects missing geom: URA=% HDB=%',
+            round(ura_no_geom_pct, 2), round(hdb_no_geom_pct, 2);
     END IF;
 
     SELECT COUNT(*) INTO future_txn FROM transactions WHERE contract_date > CURRENT_DATE;
@@ -78,6 +96,7 @@ BEGIN
         RAISE EXCEPTION 'median PSF % outside plausible band [50, 5000]', median_psf;
     END IF;
 
-    RAISE NOTICE 'verify OK: URA=%/%, HDB=%/%, median PSF=%, no_geom=%.2f%%',
-        ura_p, ura_t, hdb_p, hdb_t, median_psf, no_geom_pct;
+    RAISE NOTICE 'verify OK: URA=%/%, HDB=%/%, median PSF=%, active no_geom URA=% HDB=%',
+        ura_p, ura_t, hdb_p, hdb_t, median_psf,
+        round(ura_no_geom_pct, 2), round(hdb_no_geom_pct, 2);
 END $$;

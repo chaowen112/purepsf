@@ -1,4 +1,4 @@
-.PHONY: help up down logs ps psql backend-build backend-run backend-test frontend-dev frontend-build etl-install etl-test sqlc-gen verify-db smoke-api
+.PHONY: help up down logs ps psql backend-build backend-run backend-test frontend-dev frontend-build etl-install etl-test sqlc-gen data-update verify-db verify-data smoke-api
 
 SHELL := /bin/bash
 
@@ -52,8 +52,14 @@ frontend-build:  ## Production build
 
 # --- Verification ---
 
+data-update:  ## Refresh URA, HDB, OneMap and CEA data through the Compose ETL runner
+	./scripts/update_data.sh
+
 verify-db:  ## Run DB sanity checks (counts, PSF distribution, geocode coverage)
-	set -a && source .env && set +a && psql "$$DATABASE_URL" -f infra/verify.sql
+	docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < infra/verify.sql
+
+verify-data:  ## Report source counts/freshness and fail on stale live feeds
+	docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < infra/verify_data_update.sql
 
 smoke-api:  ## Smoke-test all API endpoints (backend must be running)
 	./scripts/smoke_api.sh

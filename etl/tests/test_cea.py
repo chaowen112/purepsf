@@ -1,8 +1,8 @@
 """Unit tests for CEA ETL helpers (no DB / no network)."""
 from datetime import date
 
-from etl.cea_transactions import parse_cea_month
-from etl.cea_salespeople import _parse_iso_date, _norm
+from etl.cea_salespeople import _norm, _parse_iso_date
+from etl.cea_transactions import _row, parse_cea_month
 
 
 def test_parse_cea_month_handles_uppercase() -> None:
@@ -35,3 +35,29 @@ def test_norm_collapses_dash_and_blank() -> None:
     assert _norm("") is None
     assert _norm("-") is None
     assert _norm(None) is None
+
+
+def test_cea_transaction_csv_row() -> None:
+    assert _row(
+        {
+            "salesperson_name": "EXAMPLE AGENT",
+            "transaction_date": "AUG-2026",
+            "salesperson_reg_num": "P123456A",
+            "property_type": "HDB",
+            "transaction_type": "RESALE",
+            "represented": "BUYER",
+            "town": "YISHUN",
+            "district": "-",
+            "general_location": "-",
+        }
+    ) == (
+        "P123456A",
+        "EXAMPLE AGENT",
+        date(2026, 8, 1),
+        "HDB",
+        "RESALE",
+        "BUYER",
+        "YISHUN",
+        None,
+        None,
+    )

@@ -53,6 +53,31 @@ make smoke-api             # API smoke tests
 make frontend-dev          # Vite dev server on :5173
 ```
 
+## Refreshing live data
+
+With Postgres running and `.env` populated, refresh every repeatable live feed
+used by the current website/API with one command:
+
+```bash
+make data-update
+```
+
+This rebuilds the one-shot ETL image, updates URA transactions, HDB block
+metadata and resale transactions, fills new OneMap coordinates/postcodes,
+refreshes derived tenure fields, then updates the CEA salesperson registry and
+transaction snapshot. It ends with freshness/count assertions from
+`make verify-data`. All loaders are rerunnable; transaction inserts use stable
+deduplication keys, metadata uses upserts, and the large CEA snapshot is staged
+and table-swapped only after the bulk CSV has loaded and indexed successfully.
+
+The CEA table swap temporarily needs free database storage comparable to the
+live `salesperson_transactions` table (allow at least 1 GB of Docker VM free
+space at the current dataset size). Planning subzones remain a one-off manual
+GeoJSON load. Developer sales is not part of this command: the repository's
+parser is still an explicit stub, so monthly figures must not be fabricated or
+treated as refreshed until that parser is implemented and a URA workbook is
+provided.
+
 ## Production deploy (single host)
 
 ```bash
@@ -133,6 +158,8 @@ links.
 | data.gov.sg `d_17f5382f26140b1fdae0ba2ef6239d2f` | HDB block metadata: completion year, floor count, dwelling/rental unit mix | Periodic |
 | data.gov.sg `d_8b84c4ee58e3cfc0ece0d773c8ca6abc` | HDB resale, block + street | Monthly |
 | OneMap `/api/common/elastic/search` | HDB block → lat/lng/postcode | On demand (15k/hr) |
+| data.gov.sg `d_07c63be0f37e6e59c07a4ddc2fd87fcb` | CEA salesperson registry | Monthly |
+| data.gov.sg `d_ee7e46d3c57f7865790704632b0aef71` bulk CSV | CEA salesperson residential transactions | Monthly |
 | data.gov.sg "Master Plan 2019 Subzone Boundary (No Sea)" | ~330 planning subzone polygons | One-off (manual GeoJSON download to `data/mp19_subzones.geojson`) |
 
 ## Known limits
