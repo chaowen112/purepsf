@@ -1,0 +1,29 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://purepsf.tet.sg/.well-known/api-catalog",
+      "item": [
+        {
+          "href": "https://purepsf.tet.sg/api/tracked",
+          "type": "application/json"
+        },
+        {
+          "href": "https://purepsf.tet.sg/api/subzones/stats",
+          "type": "application/json"
+        },
+        {
+          "href": "https://purepsf.tet.sg/api/agents",
+          "type": "application/json"
+        },
+        {
+          "href": "https://purepsf.tet.sg/api/agents/towns",
+          "type": "application/json"
+        },
+        {
+          "href": "https://purepsf.tet.sg/api/search",
+          "type": "application/json"
+        }
+      ]
+    }
+  ]
+}

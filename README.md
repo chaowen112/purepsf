@@ -117,6 +117,22 @@ is a one-shot runner — `docker compose --profile etl run --rm etl <subcommand>
 | GET | `/api/tracked` | Tracked projects + latest stats |
 | GET | `/api/subzones/stats?from=&to=&source=` | GeoJSON FeatureCollection of MP19 subzones with avg PSF per polygon |
 
+## API discovery
+
+The homepage response advertises the API catalog with the registered
+`api-catalog` Link relation from RFC 9727:
+
+```http
+Link: </.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"
+```
+
+`GET` and `HEAD` requests to `/.well-known/api-catalog` return an RFC 9264
+JSON Linkset using the RFC 9727 profile. Verify a running deployment with:
+
+```bash
+./scripts/verify_agent_discovery.sh https://purepsf.tet.sg
+```
+
 ## External listing links
 
 `external_project_links` stores manually curated outbound links to listing
